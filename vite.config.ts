@@ -1,18 +1,16 @@
 import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
   plugins: [
-    react(),
     VitePWA({
       registerType: 'autoUpdate',
       manifest: {
         name: 'KoolMovez',
         short_name: 'KoolMovez',
-        description: 'Your KoolMovez App',
-        theme_color: '#000000',
-        background_color: '#ffffff',
+        description: 'Secure currency exchange and financial transactions',
+        theme_color: '#0b1329',
+        background_color: '#0b1329',
         display: 'standalone',
         icons: [
           {
@@ -23,13 +21,11 @@ export default defineConfig({
           {
             src: '/icon-512.png',
             sizes: '512x512',
-            type: 'image/png'
+            type: 'image/png',
+            purpose: 'any maskable'
           }
         ]
       }
     })
-  ],
-  server: {
-    host: true,
-  }
+  ]
 })
