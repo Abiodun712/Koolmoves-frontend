@@ -474,10 +474,10 @@ const handleLogout = async () => {
                         </div>
 
                         <div className="space-y-3 text-xs">
-                            <div className="p-3 bg-slate-950 rounded-xl border border-purple-900/50">
-                                <span className="text-[10px] text-purple-400 block">Account Holder / Name</span>
-                                <span className="font-bold text-white text-sm mt-0.5 block">{selectedProfile.account_name || 'Ismaila Abiodun Ogundepo'}</span>
-                            </div>
+    <div className="p-3 bg-slate-950 rounded-xl border border-purple-900/50">
+        <span className="text-[10px] text-purple-400 block">Account Holder / Name</span>
+        <span className="font-bold text-white text-sm mt-0.5 block">{selectedProfile.account_name || selectedProfile.full_name || 'Not provided'}</span>
+    </div>
                             <div className="p-3 bg-slate-950 rounded-xl border border-purple-900/50">
                                 <span className="text-[10px] text-purple-400 block">User Email / Contact</span>
                                 <span className="font-bold text-cyan-300 mt-0.5 block">{selectedProfile.user_email || 'Not provided'}</span>
