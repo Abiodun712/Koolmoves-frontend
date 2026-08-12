@@ -39,10 +39,10 @@ export const Login: React.FC = () => {
       if (profile?.role === 'admin') {
         navigate('/admin');
       } else {
-        navigate('/dashboard');
+        navigate('/home');
       }
     } else {
-      navigate('/dashboard');
+      navigate('/home');
     }
 
     setLoading(false);

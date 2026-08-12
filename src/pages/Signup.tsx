@@ -418,7 +418,7 @@ export default function Signup() {
         );
 
       if (profileError) throw profileError;
-      window.location.href = '/dashboard';
+      window.location.href = '/home';
 
     } catch (err: any) {
       setErrorMsg(err.message || 'Invalid or expired verification code.');
