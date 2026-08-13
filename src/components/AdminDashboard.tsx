@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {useAuth } from '../contexts/AuthContext';
 export default function AdminDashboard() {
     const [requests, setRequests] = useState<any[]>([]);
@@ -255,7 +255,13 @@ const handleLogout = async () => {
                     </h1>
                     <p className="text-xs md:text-sm text-purple-200 mt-1">Manage exchange requests, review user profiles, and control online availability status.</p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+    <Link
+        to="/admin/air-freight"
+        className="bg-cyan-800/65 hover:bg-cyan-700 text-cyan-100 px-4 py-2 rounded-xl text-xs font-semibold transition-all border border-cyan-500/30 shadow"
+    >
+        Air Freight
+    </Link>
     <button
         onClick={fetchAdminData}
         className="bg-purple-800/65 hover:bg-purple-700 text-cyan-200 px-4 py-2 rounded-xl text-xs font-semibold transition-all border border-purple-500/30 shadow"
