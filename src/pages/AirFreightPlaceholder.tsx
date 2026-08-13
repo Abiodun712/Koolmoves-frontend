@@ -79,7 +79,7 @@ export default function AirFreightPlaceholder() {
 
   const [goods, setGoods] = useState<AirFreightGood[]>([]);
   const [nigeriaPickups, setNigeriaPickups] = useState<Warehouse[]>([]);
-  const [airChinaWarehouseId, setAirChinaWarehouseId] = useState<string | null>(null);
+  const [airChinaWarehouse, setAirChinaWarehouse] = useState<Warehouse | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -87,6 +87,7 @@ export default function AirFreightPlaceholder() {
   const [submitting, setSubmitting] = useState(false);
   const [submitMessage, setSubmitMessage] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [copiedChinaAddress, setCopiedChinaAddress] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -96,14 +97,6 @@ export default function AirFreightPlaceholder() {
       setLoadError(null);
 
       try {
-        if (!profile?.km_id) {
-          if (!cancelled) {
-            setGoods([]);
-            setNigeriaPickups([]);
-          }
-          return;
-        }
-
         const { data: warehouseRows } = await supabase
           .from('warehouses')
           .select('*')
@@ -118,21 +111,21 @@ export default function AirFreightPlaceholder() {
           return warehouse;
         });
 
+        // Air goods always use CN-AIR — users never choose the China warehouse.
         const chinaAir =
-          warehouses.find(
-            (w) => isChinaReceivingWarehouse(w) && w.code === 'CN-AIR'
-          ) ||
-          warehouses.find(
-            (w) => isChinaReceivingWarehouse(w) && w.freight_type === 'air'
-          ) ||
-          null;
-        setAirChinaWarehouseId(chinaAir?.id ?? null);
+          warehouses.find((w) => w.code === 'CN-AIR' && isChinaReceivingWarehouse(w)) || null;
+        setAirChinaWarehouse(chinaAir);
 
         setNigeriaPickups(
           warehouses.filter(
             (w) => isNigeriaPickupWarehouse(w) && warehouseSupportsFreight(w, 'air')
           )
         );
+
+        if (!profile?.km_id) {
+          setGoods([]);
+          return;
+        }
 
         const { data, error } = await supabase
           .from('air_freight_goods')
@@ -175,6 +168,18 @@ export default function AirFreightPlaceholder() {
       cancelled = true;
     };
   }, [profile?.km_id]);
+
+  const copyChinaAddress = async () => {
+    const text = airChinaWarehouse?.address?.trim();
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedChinaAddress(true);
+      window.setTimeout(() => setCopiedChinaAddress(false), 1500);
+    } catch {
+      // Clipboard may be blocked; leave UI unchanged.
+    }
+  };
 
   const toggleSelected = (id: string) => {
     setSelectedIds((prev) => {
@@ -229,7 +234,8 @@ export default function AirFreightPlaceholder() {
     const selectedGoods = goods.filter((g) => selectedIds.has(g.id));
     const chinaWarehouseId =
       selectedGoods.find((g) => g.china_warehouse_id)?.china_warehouse_id ||
-      airChinaWarehouseId;
+      airChinaWarehouse?.id ||
+      null;
 
     setSubmitting(true);
     try {
@@ -285,7 +291,7 @@ export default function AirFreightPlaceholder() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <div className="max-w-4xl mx-auto p-4 space-y-6 pb-36">
+      <div className="max-w-4xl mx-auto p-4 space-y-6 pb-52">
         <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
@@ -293,8 +299,8 @@ export default function AirFreightPlaceholder() {
             </p>
             <h1 className="text-lg font-extrabold text-gray-900 mt-0.5">Air Freight</h1>
             <p className="text-xs text-gray-500 mt-0.5 max-w-xl leading-relaxed">
-              Select received Air goods and request packing to a Nigeria pickup warehouse. Goods
-              details stay read-only.
+              Air goods are received at the Air China Warehouse (CN-AIR). Select items and request
+              packing to a Nigeria pickup warehouse.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -308,6 +314,46 @@ export default function AirFreightPlaceholder() {
               ← Home
             </Link>
           </div>
+        </div>
+
+        {/* AIR CHINA RECEIVING WAREHOUSE (CN-AIR only — not selectable) */}
+        <div className="bg-white p-5 rounded-2xl border border-emerald-200 shadow-sm space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-700">
+                China receiving warehouse
+              </p>
+              <h2 className="text-base font-extrabold text-[#0F172A] mt-0.5">
+                {airChinaWarehouse?.name || 'Air China Warehouse'}
+              </h2>
+              <p className="text-xs text-gray-600 mt-1 font-semibold">
+                Give this address to your China supplier.
+              </p>
+              <p className="text-[11px] text-gray-500 mt-0.5">
+                Air goods automatically use CN-AIR. You do not choose the China warehouse.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={copyChinaAddress}
+              disabled={!airChinaWarehouse?.address}
+              className="shrink-0 text-xs font-bold px-4 py-2.5 rounded-xl bg-emerald-600 text-white hover:bg-emerald-500 disabled:bg-gray-200 disabled:text-gray-500 disabled:cursor-not-allowed"
+            >
+              {copiedChinaAddress ? 'Copied' : 'Copy Address'}
+            </button>
+          </div>
+          {airChinaWarehouse?.address ? (
+            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+              <p className="text-sm text-gray-900 whitespace-pre-line leading-relaxed font-medium">
+                {airChinaWarehouse.address}
+              </p>
+            </div>
+          ) : (
+            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+              CN-AIR warehouse address is not available yet. Ensure warehouses are seeded in
+              Supabase.
+            </p>
+          )}
         </div>
 
         <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm space-y-4">
@@ -496,6 +542,21 @@ export default function AirFreightPlaceholder() {
                 {submitting ? 'Submitting…' : 'Request Packing'}
               </button>
             </div>
+            {selectedPickup && (
+              <div className="p-3 rounded-xl border border-slate-200 bg-slate-50 space-y-1">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                  Selected Nigeria pickup
+                </p>
+                <p className="text-sm font-bold text-gray-900">{selectedPickup.name}</p>
+                {selectedPickup.address ? (
+                  <p className="text-xs text-gray-800 whitespace-pre-line leading-relaxed">
+                    {selectedPickup.address}
+                  </p>
+                ) : (
+                  <p className="text-xs text-amber-700">Full address/phone not published yet.</p>
+                )}
+              </div>
+            )}
             <p className="text-xs text-gray-600">
               {selectedCount === 0
                 ? 'Select one or more Air goods, then choose a Nigeria pickup warehouse.'
