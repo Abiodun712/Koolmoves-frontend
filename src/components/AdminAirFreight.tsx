@@ -1,7 +1,12 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabaseClient';
+import {
+  freightTypeFromReceivingWarehouse,
+  normalizeWarehouse,
+  type Warehouse,
+} from '../types/warehouse';
 
 type VerifiedUser = {
   user_id: string;
@@ -43,10 +48,53 @@ export default function AdminAirFreight() {
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [airChinaWarehouse, setAirChinaWarehouse] = useState<Warehouse | null>(null);
+  const [warehouseLoadError, setWarehouseLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadAirChinaWarehouse = async () => {
+      setWarehouseLoadError(null);
+      const { data, error } = await supabase
+        .from('warehouses')
+        .select('*')
+        .eq('code', 'CN-AIR')
+        .eq('is_active', true)
+        .maybeSingle();
+
+      if (cancelled) return;
+
+      if (error || !data) {
+        setAirChinaWarehouse(null);
+        setWarehouseLoadError(
+          error?.message ||
+            'Air China Warehouse not found. Run supabase/warehouses.sql in Supabase.'
+        );
+        return;
+      }
+
+      setAirChinaWarehouse(normalizeWarehouse(data));
+    };
+
+    loadAirChinaWarehouse();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const derivedFreightType = useMemo(() => {
+    if (!airChinaWarehouse) return null;
+    try {
+      return freightTypeFromReceivingWarehouse(airChinaWarehouse);
+    } catch {
+      return null;
+    }
+  }, [airChinaWarehouse]);
 
   const canSave = useMemo(() => {
     return (
       Boolean(verifiedUser) &&
+      Boolean(airChinaWarehouse) &&
       form.goods_description.trim().length > 0 &&
       form.date_received.trim().length > 0 &&
       form.quantity.trim().length > 0 &&
@@ -54,7 +102,7 @@ export default function AdminAirFreight() {
       !saving &&
       !uploadingPhoto
     );
-  }, [verifiedUser, form, saving, uploadingPhoto]);
+  }, [verifiedUser, airChinaWarehouse, form, saving, uploadingPhoto]);
 
   const handleLogout = async () => {
     await logout();
@@ -150,6 +198,13 @@ export default function AdminAirFreight() {
       return;
     }
 
+    if (!airChinaWarehouse || derivedFreightType !== 'air') {
+      setSaveError(
+        'Air China Warehouse is required. Goods are saved as Air only (freight type is automatic).'
+      );
+      return;
+    }
+
     const description = form.goods_description.trim();
     if (!description) {
       setSaveError('Goods description is required.');
@@ -183,6 +238,7 @@ export default function AdminAirFreight() {
       const payload = {
         user_id: verifiedUser.user_id,
         km_id: verifiedUser.km_id,
+        china_warehouse_id: airChinaWarehouse.id,
         date_received: form.date_received,
         goods_description: description,
         supplier_phone: form.supplier_phone.trim() || null,
@@ -202,7 +258,7 @@ export default function AdminAirFreight() {
       }
 
       setSaveMessage(
-        `Saved received goods for ${verifiedUser.km_id}. It will show on the user's Air Freight page.`
+        `Saved AIR goods for ${verifiedUser.km_id} at ${airChinaWarehouse.name}. Visible on the user's Air Freight page.`
       );
       resetFormKeepUser();
     } catch (err: any) {
@@ -220,7 +276,8 @@ export default function AdminAirFreight() {
             Air Freight — Receive Goods
           </h1>
           <p className="text-xs md:text-sm text-purple-200 mt-1">
-            Log warehouse arrivals by KM ID. Users see records read-only on their Air Freight page.
+            Phase 1: enter a KM-ID and record goods received at the Air China Warehouse. Saved as Air
+            goods only.
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -238,6 +295,29 @@ export default function AdminAirFreight() {
             Log Out
           </button>
         </div>
+      </div>
+
+      {/* CHINA RECEIVING WAREHOUSE (freight type automatic) */}
+      <div className="p-5 bg-slate-900/90 rounded-2xl border border-cyan-500/40 shadow-xl space-y-2">
+        <h2 className="text-sm font-bold text-cyan-200 uppercase tracking-wider">
+          Receiving warehouse
+        </h2>
+        {airChinaWarehouse && derivedFreightType ? (
+          <div className="text-xs space-y-1">
+            <p className="font-bold text-white">{airChinaWarehouse.name}</p>
+            <p className="text-cyan-100/90">
+              Freight type: <span className="font-extrabold uppercase">{derivedFreightType}</span>{' '}
+              (automatic — not selectable)
+            </p>
+            {airChinaWarehouse.address && (
+              <p className="text-purple-200/80 whitespace-pre-line pt-1">{airChinaWarehouse.address}</p>
+            )}
+          </div>
+        ) : (
+          <p className="text-xs text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-xl px-3 py-2">
+            {warehouseLoadError || 'Loading Air China Warehouse...'}
+          </p>
+        )}
       </div>
 
       {/* KM ID VERIFY */}
@@ -301,6 +381,15 @@ export default function AdminAirFreight() {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label className="space-y-1 text-xs sm:col-span-2">
+            <span className="font-bold text-purple-300">KM-ID</span>
+            <input
+              type="text"
+              value={verifiedUser?.km_id || ''}
+              readOnly
+              className="w-full p-2.5 rounded-xl bg-slate-800/80 text-emerald-200 border border-purple-500/50 font-mono cursor-not-allowed"
+            />
+          </label>
           <label className="space-y-1 text-xs">
             <span className="font-bold text-purple-300">Date received</span>
             <input
@@ -324,7 +413,7 @@ export default function AdminAirFreight() {
             />
           </label>
           <label className="space-y-1 text-xs sm:col-span-2">
-            <span className="font-bold text-purple-300">Goods description *</span>
+            <span className="font-bold text-purple-300">Description *</span>
             <textarea
               value={form.goods_description}
               onChange={(e) => updateField('goods_description', e.target.value)}
@@ -365,7 +454,7 @@ export default function AdminAirFreight() {
             />
           </label>
           <label className="space-y-1 text-xs">
-            <span className="font-bold text-purple-300">Photo (optional)</span>
+            <span className="font-bold text-purple-300">Photo upload (optional)</span>
             <input
               type="file"
               accept="image/*"
@@ -377,12 +466,12 @@ export default function AdminAirFreight() {
             </span>
           </label>
           <label className="space-y-1 text-xs sm:col-span-2">
-            <span className="font-bold text-purple-300">Admin remarks (optional)</span>
+            <span className="font-bold text-purple-300">Remarks (optional)</span>
             <textarea
               value={form.admin_remarks}
               onChange={(e) => updateField('admin_remarks', e.target.value)}
               rows={2}
-              placeholder="Internal notes visible to the user"
+              placeholder="Notes visible to the user"
               className="w-full p-2.5 rounded-xl bg-slate-800 text-white border border-purple-500/50 focus:outline-none focus:border-cyan-400"
             />
           </label>
