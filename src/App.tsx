@@ -6,6 +6,7 @@ import HomeDashboard from "./pages/HomeDashboard";
 import AirFreightPlaceholder from "./pages/AirFreightPlaceholder";
 import SeaFreightPlaceholder from "./pages/SeaFreightPlaceholder";
 import AdminDashboard from "./components/AdminDashboard";
+import AdminAirFreight from "./components/AdminAirFreight";
 import UserDashboard from "./components/UserDashboard";
 import { RequireAuth, RequireAdmin } from "./components/RouteGuards";
 
@@ -57,6 +58,15 @@ export default function App() {
         element={
           <RequireAdmin>
             <AdminDashboard />
+          </RequireAdmin>
+        }
+      />
+
+      <Route
+        path="/admin/air-freight"
+        element={
+          <RequireAdmin>
+            <AdminAirFreight />
           </RequireAdmin>
         }
       />
