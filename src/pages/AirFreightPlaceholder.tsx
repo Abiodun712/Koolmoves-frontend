@@ -88,6 +88,8 @@ export default function AirFreightPlaceholder() {
   const [submitMessage, setSubmitMessage] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [copiedChinaAddress, setCopiedChinaAddress] = useState(false);
+  const [airFreightFee, setAirFreightFee] = useState<string | null>(null);
+  const [airFreightNotice, setAirFreightNotice] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -97,12 +99,24 @@ export default function AirFreightPlaceholder() {
       setLoadError(null);
 
       try {
-        const { data: warehouseRows } = await supabase
-          .from('warehouses')
-          .select('*')
-          .eq('is_active', true);
+        const [{ data: warehouseRows }, { data: settingsRows }] = await Promise.all([
+          supabase.from('warehouses').select('*').eq('is_active', true),
+          supabase
+            .from('site_settings')
+            .select('key, value')
+            .in('key', ['air_freight_fee', 'air_freight_notice']),
+        ]);
 
         if (cancelled) return;
+
+        if (settingsRows) {
+          const map: Record<string, string> = {};
+          settingsRows.forEach((row: { key: string; value: string }) => {
+            map[row.key] = row.value ?? '';
+          });
+          setAirFreightFee(map.air_freight_fee?.trim() || null);
+          setAirFreightNotice(map.air_freight_notice?.trim() || null);
+        }
 
         const warehouseById = new Map<string, Warehouse>();
         const warehouses = (warehouseRows || []).map((row) => {
@@ -314,6 +328,28 @@ export default function AirFreightPlaceholder() {
               ← Home
             </Link>
           </div>
+        </div>
+
+        {/* FEE + ADMIN NOTICE (site_settings) */}
+        <div className="bg-white p-5 rounded-2xl border border-amber-200 shadow-sm space-y-3">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wide text-amber-700">
+              Current Air Freight fee
+            </p>
+            <p className="text-2xl sm:text-3xl font-extrabold text-[#0F172A] mt-1 tracking-tight">
+              {airFreightFee || 'Not published yet'}
+            </p>
+          </div>
+          {airFreightNotice ? (
+            <div className="pt-3 border-t border-amber-100">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                Latest notice
+              </p>
+              <p className="text-sm text-gray-800 mt-1 whitespace-pre-line leading-relaxed">
+                {airFreightNotice}
+              </p>
+            </div>
+          ) : null}
         </div>
 
         {/* AIR CHINA RECEIVING WAREHOUSE (CN-AIR only — not selectable) */}

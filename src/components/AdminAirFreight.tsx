@@ -51,6 +51,12 @@ export default function AdminAirFreight() {
   const [airChinaWarehouse, setAirChinaWarehouse] = useState<Warehouse | null>(null);
   const [warehouseLoadError, setWarehouseLoadError] = useState<string | null>(null);
 
+  const [airFreightFee, setAirFreightFee] = useState('');
+  const [airFreightNotice, setAirFreightNotice] = useState('');
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [settingsMessage, setSettingsMessage] = useState<string | null>(null);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+
   useEffect(() => {
     let cancelled = false;
     const loadAirChinaWarehouse = async () => {
@@ -76,11 +82,50 @@ export default function AdminAirFreight() {
       setAirChinaWarehouse(normalizeWarehouse(data));
     };
 
+    const loadAirFreightSettings = async () => {
+      const { data, error } = await supabase
+        .from('site_settings')
+        .select('key, value')
+        .in('key', ['air_freight_fee', 'air_freight_notice']);
+
+      if (cancelled || error || !data) return;
+
+      const map: Record<string, string> = {};
+      data.forEach((row: { key: string; value: string }) => {
+        map[row.key] = row.value ?? '';
+      });
+      setAirFreightFee(map.air_freight_fee || '');
+      setAirFreightNotice(map.air_freight_notice || '');
+    };
+
     loadAirChinaWarehouse();
+    loadAirFreightSettings();
     return () => {
       cancelled = true;
     };
   }, []);
+
+  const saveAirFreightSettings = async () => {
+    setSettingsMessage(null);
+    setSettingsError(null);
+    setSavingSettings(true);
+    try {
+      const updatedAt = new Date().toISOString();
+      const { error } = await supabase.from('site_settings').upsert(
+        [
+          { key: 'air_freight_fee', value: airFreightFee.trim(), updated_at: updatedAt },
+          { key: 'air_freight_notice', value: airFreightNotice.trim(), updated_at: updatedAt },
+        ],
+        { onConflict: 'key' }
+      );
+      if (error) throw error;
+      setSettingsMessage('Air Freight fee and notice saved.');
+    } catch (err: any) {
+      setSettingsError(err?.message || 'Failed to save Air Freight settings.');
+    } finally {
+      setSavingSettings(false);
+    }
+  };
 
   const derivedFreightType = useMemo(() => {
     if (!airChinaWarehouse) return null;
@@ -295,6 +340,62 @@ export default function AdminAirFreight() {
             Log Out
           </button>
         </div>
+      </div>
+
+      {/* FEE + BROADCAST NOTICE (site_settings) */}
+      <div className="p-5 bg-slate-900/90 rounded-2xl border border-amber-500/40 shadow-xl space-y-4">
+        <div>
+          <h2 className="text-sm font-bold text-amber-200 uppercase tracking-wider">
+            Air Freight fee & notice
+          </h2>
+          <p className="text-xs text-purple-300/80 mt-1">
+            Saved to site settings. Shown on the user Air Freight page.
+          </p>
+        </div>
+        <div className="space-y-3">
+          <div>
+            <label className="block text-[11px] font-bold text-amber-100/90 mb-1">
+              Price / fee
+            </label>
+            <input
+              type="text"
+              value={airFreightFee}
+              onChange={(e) => setAirFreightFee(e.target.value)}
+              placeholder="e.g. ₦8,500 / kg"
+              className="w-full p-2.5 rounded-xl bg-slate-800 text-white border border-amber-500/40 focus:outline-none focus:border-amber-300 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-[11px] font-bold text-amber-100/90 mb-1">
+              Broadcast notice
+            </label>
+            <textarea
+              value={airFreightNotice}
+              onChange={(e) => setAirFreightNotice(e.target.value)}
+              rows={3}
+              placeholder="Message shown to all Air Freight users"
+              className="w-full p-2.5 rounded-xl bg-slate-800 text-white border border-amber-500/40 focus:outline-none focus:border-amber-300 text-sm resize-y"
+            />
+          </div>
+        </div>
+        {settingsError && (
+          <p className="text-xs text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-xl px-3 py-2">
+            {settingsError}
+          </p>
+        )}
+        {settingsMessage && (
+          <p className="text-xs text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 rounded-xl px-3 py-2">
+            {settingsMessage}
+          </p>
+        )}
+        <button
+          type="button"
+          onClick={saveAirFreightSettings}
+          disabled={savingSettings}
+          className="bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white px-4 py-2.5 rounded-xl text-xs font-bold"
+        >
+          {savingSettings ? 'Saving...' : 'Save fee & notice'}
+        </button>
       </div>
 
       {/* CHINA RECEIVING WAREHOUSE (freight type automatic) */}
