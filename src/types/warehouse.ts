@@ -29,7 +29,7 @@ export type Warehouse = {
   is_active: boolean;
 };
 
-/** Future packing/shipping request — stores Nigeria pickup with selected goods. */
+/** Packing/shipping request — Nigeria pickup + optional user packing instructions. */
 export type PackingRequest = {
   id: string;
   user_id: string;
@@ -37,6 +37,9 @@ export type PackingRequest = {
   freight_type: FreightType;
   china_warehouse_id: string | null;
   nigeria_pickup_warehouse_id: string;
+  /** User free-text packing instructions (separate from admin shipment remarks). */
+  user_packing_instructions: string | null;
+  shipment_id: string | null;
   status: string;
   created_at: string;
 };

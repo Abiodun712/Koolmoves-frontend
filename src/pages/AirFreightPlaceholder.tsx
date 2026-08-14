@@ -11,6 +11,10 @@ import {
   type FreightType,
   type Warehouse,
 } from '../types/warehouse';
+import {
+  normalizeLogisticsShipment,
+  type LogisticsShipment,
+} from '../types/shipment';
 
 type AirFreightGood = {
   id: string;
@@ -90,6 +94,9 @@ export default function AirFreightPlaceholder() {
   const [copiedChinaAddress, setCopiedChinaAddress] = useState(false);
   const [airFreightFee, setAirFreightFee] = useState<string | null>(null);
   const [airFreightNotice, setAirFreightNotice] = useState<string | null>(null);
+  const [packingInstructions, setPackingInstructions] = useState('');
+  const [shipments, setShipments] = useState<LogisticsShipment[]>([]);
+  const [warehouseById, setWarehouseById] = useState<Map<string, Warehouse>>(new Map());
 
   useEffect(() => {
     let cancelled = false;
@@ -118,12 +125,13 @@ export default function AirFreightPlaceholder() {
           setAirFreightNotice(map.air_freight_notice?.trim() || null);
         }
 
-        const warehouseById = new Map<string, Warehouse>();
+        const nextWarehouseById = new Map<string, Warehouse>();
         const warehouses = (warehouseRows || []).map((row) => {
           const warehouse = normalizeWarehouse(row);
-          warehouseById.set(warehouse.id, warehouse);
+          nextWarehouseById.set(warehouse.id, warehouse);
           return warehouse;
         });
+        setWarehouseById(nextWarehouseById);
 
         // Air goods always use CN-AIR — users never choose the China warehouse.
         const chinaAir =
@@ -138,15 +146,27 @@ export default function AirFreightPlaceholder() {
 
         if (!profile?.km_id) {
           setGoods([]);
+          setShipments([]);
           return;
         }
 
-        const { data, error } = await supabase
-          .from('air_freight_goods')
-          .select('*')
-          .eq('km_id', profile.km_id);
+        const [{ data, error }, { data: shipmentRows }] = await Promise.all([
+          supabase.from('air_freight_goods').select('*').eq('km_id', profile.km_id),
+          supabase
+            .from('shipments')
+            .select('*')
+            .eq('km_id', profile.km_id)
+            .eq('freight_type', 'air')
+            .order('created_at', { ascending: false }),
+        ]);
 
         if (cancelled) return;
+
+        if (shipmentRows) {
+          setShipments(shipmentRows.map((row) => normalizeLogisticsShipment(row)));
+        } else {
+          setShipments([]);
+        }
 
         if (error) {
           setGoods([]);
@@ -157,7 +177,7 @@ export default function AirFreightPlaceholder() {
         }
 
         const normalized = (data || [])
-          .map((row) => normalizeGood(row, warehouseById))
+          .map((row) => normalizeGood(row, nextWarehouseById))
           .filter((item) => item.freight_type === 'air');
 
         normalized.sort((a, b) => {
@@ -261,6 +281,7 @@ export default function AirFreightPlaceholder() {
           freight_type: 'air',
           china_warehouse_id: chinaWarehouseId,
           nigeria_pickup_warehouse_id: selectedPickup.id,
+          user_packing_instructions: packingInstructions.trim() || null,
           status: 'pending_packing',
         })
         .select('id')
@@ -269,7 +290,7 @@ export default function AirFreightPlaceholder() {
       if (requestError || !requestRow?.id) {
         setSubmitError(
           requestError?.message ||
-            'Could not create packing request. Ensure warehouses.sql has been applied.'
+            'Could not create packing request. Ensure warehouses.sql and shipments.sql have been applied.'
         );
         return;
       }
@@ -296,6 +317,7 @@ export default function AirFreightPlaceholder() {
       );
       setSelectedIds(new Set());
       setPickupWarehouseId('');
+      setPackingInstructions('');
     } catch (err: any) {
       setSubmitError(err?.message || 'Could not create packing request.');
     } finally {
@@ -305,7 +327,7 @@ export default function AirFreightPlaceholder() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <div className="max-w-4xl mx-auto p-4 space-y-6 pb-52">
+      <div className="max-w-4xl mx-auto p-4 space-y-6 pb-72">
         <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
@@ -538,6 +560,107 @@ export default function AirFreightPlaceholder() {
           )}
         </div>
 
+        {shipments.length > 0 && (
+          <div className="bg-white p-5 rounded-2xl border border-emerald-200 shadow-sm space-y-4">
+            <div>
+              <h2 className="text-sm font-bold text-[#0F172A]">Your Air shipments</h2>
+              <p className="text-xs text-gray-500 mt-0.5">
+                After admin finalizes a package, the full Nigeria pickup warehouse address is shown
+                here (not just the area name).
+              </p>
+            </div>
+            {shipments.map((shipment) => {
+                const pickup = warehouseById.get(shipment.nigeria_pickup_warehouse_id);
+                // After finalize (and later lifecycle statuses), show full warehouse.address from DB.
+                const showFullAddress = Boolean(
+                  shipment.finalized_at ||
+                    shipment.status === 'finalized' ||
+                    shipment.status === 'in_transit' ||
+                    shipment.status === 'arrived_nigeria' ||
+                    shipment.status === 'ready_for_pickup' ||
+                    shipment.status === 'completed'
+                );
+                return (
+                  <div
+                    key={shipment.id}
+                    className="p-4 rounded-xl border border-slate-200 bg-slate-50 space-y-2"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                          Shipment ID
+                        </p>
+                        <p className="text-sm font-extrabold text-gray-900">
+                          {shipment.shipment_code}
+                        </p>
+                      </div>
+                      <span className="text-[10px] font-bold uppercase px-2 py-1 rounded-lg bg-white border border-gray-200 text-gray-700">
+                        {shipment.status}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <p className="text-[10px] font-bold text-gray-400 uppercase">Departure</p>
+                        <p className="font-semibold text-gray-800">
+                          {formatDate(shipment.departure_date)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-bold text-gray-400 uppercase">ETA</p>
+                        <p className="font-semibold text-gray-800">
+                          {formatDate(shipment.estimated_arrival)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-bold text-gray-400 uppercase">
+                          Final packed wt
+                        </p>
+                        <p className="font-semibold text-gray-800">
+                          {shipment.final_packed_weight_kg != null
+                            ? `${shipment.final_packed_weight_kg} kg`
+                            : '—'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-bold text-gray-400 uppercase">
+                          Total amount due
+                        </p>
+                        <p className="font-semibold text-gray-800">
+                          {shipment.total_amount_due != null
+                            ? `₦${shipment.total_amount_due.toLocaleString()}`
+                            : '—'}
+                        </p>
+                      </div>
+                    </div>
+                    {showFullAddress ? (
+                      <div className="pt-2 border-t border-slate-200 space-y-1">
+                        <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-700">
+                          Nigeria pickup — full address
+                        </p>
+                        <p className="text-sm font-bold text-gray-900">
+                          {pickup?.name || 'Pickup warehouse'}
+                        </p>
+                        {pickup?.address ? (
+                          <p className="text-sm text-gray-900 whitespace-pre-line leading-relaxed font-medium">
+                            {pickup.address}
+                          </p>
+                        ) : (
+                          <p className="text-xs text-amber-700">
+                            Full address not published on this warehouse yet.
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-500">
+                        Full pickup address appears after admin finalizes this shipment.
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+          </div>
+        )}
+
         <div className="fixed bottom-0 inset-x-0 border-t border-gray-200 bg-white/95 backdrop-blur-sm">
           <div className="max-w-4xl mx-auto px-4 py-3 space-y-2">
             <div className="flex flex-col sm:flex-row sm:items-end gap-2">
@@ -578,6 +701,19 @@ export default function AirFreightPlaceholder() {
                 {submitting ? 'Submitting…' : 'Request Packing'}
               </button>
             </div>
+            <label className="block space-y-1">
+              <span className="text-[10px] font-bold uppercase tracking-wide text-gray-500">
+                Packing Instructions / Remarks
+              </span>
+              <textarea
+                value={packingInstructions}
+                onChange={(e) => setPackingInstructions(e.target.value)}
+                rows={2}
+                disabled={selectedCount === 0}
+                placeholder="Optional notes for admin when packing your goods"
+                className="w-full text-xs font-medium px-3 py-2 rounded-xl border border-gray-200 bg-white text-gray-800 disabled:bg-gray-100 disabled:text-gray-400 resize-y"
+              />
+            </label>
             {selectedPickup && (
               <div className="p-3 rounded-xl border border-slate-200 bg-slate-50 space-y-1">
                 <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">

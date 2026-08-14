@@ -7,6 +7,7 @@ import {
   normalizeWarehouse,
   type Warehouse,
 } from '../types/warehouse';
+import AdminAirShipments from './AdminAirShipments';
 
 type VerifiedUser = {
   user_id: string;
@@ -397,6 +398,8 @@ export default function AdminAirFreight() {
           {savingSettings ? 'Saving...' : 'Save fee & notice'}
         </button>
       </div>
+
+      <AdminAirShipments publishedFeeText={airFreightFee} />
 
       {/* CHINA RECEIVING WAREHOUSE (freight type automatic) */}
       <div className="p-5 bg-slate-900/90 rounded-2xl border border-cyan-500/40 shadow-xl space-y-2">
