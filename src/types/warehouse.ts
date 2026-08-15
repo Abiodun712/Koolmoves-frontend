@@ -3,7 +3,7 @@
  *
  * Architecture (approved):
  * - Air goods stay on `air_freight_goods` (no shared logistics_goods).
- * - Sea will later use parallel `sea_freight_goods` (not in this MVP).
+ * - Sea uses parallel `sea_freight_goods` + `sea_packing_request_items`.
  * - Shared: `warehouses` + `packing_requests`.
  * - Air packing lines: `air_packing_request_items`.
  * - Freight type comes from the China receiving warehouse (CN-AIR → air).

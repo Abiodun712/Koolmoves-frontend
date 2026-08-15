@@ -61,8 +61,9 @@ create policy "warehouses_admin_all"
     )
   );
 
--- Seed China receiving (Air / Sea) + sample Nigeria pickups (idempotent by code).
--- CN-SEA is seeded for future Sea Freight; no sea_freight_goods table in this MVP.
+-- Seed ONLY approved warehouses (7 columns per row).
+-- Idempotent: single ON CONFLICT (code) DO UPDATE
+-- Each row: code, name, country, kind, freight_type, address, is_active
 insert into public.warehouses (code, name, country, kind, freight_type, address, is_active)
 values
   (
@@ -71,7 +72,7 @@ values
     'china',
     'receiving',
     'air',
-    'China - Air receiving warehouse address (update in admin/SQL).',
+    E'广东省广州市越秀区 三元里大道，伍福服装城 C1-087\nPhone: 17620727605',
     true
   ),
   (
@@ -80,37 +81,34 @@ values
     'china',
     'receiving',
     'sea',
-    'China - Sea receiving warehouse address (update in admin/SQL).',
+    E'导航：佛山市里水镇莲塘大道2号岭城仓储物流园107卡\nPhone: 17620727605',
     true
   ),
   (
-    'NG-LAGOS-AIR',
-    'Lagos Pickup (Air)',
-    'nigeria',
-    'pickup',
-    'air',
-    'Lagos - Air-eligible pickup warehouse (update address in SQL).',
-    true
-  ),
-  (
-    'NG-ABUJA-BOTH',
-    'Abuja Pickup (Air & Sea)',
+    'NG-IKEJA',
+    'Ikeja',
     'nigeria',
     'pickup',
     'both',
-    'Abuja - supports Air and Sea pickup (update address in SQL).',
+    E'47, Kalejaye Street, Bisam Bus/stop. Ikeja, Lagos State. Nigeria.\nPhone: +234 916 795 6122',
     true
   ),
   (
-    'NG-PH-SEA',
-    'Port Harcourt Pickup (Sea)',
+    'NG-IYANA-IPAJA',
+    'Iyana Ipaja',
     'nigeria',
     'pickup',
-    'sea',
-    'Port Harcourt - Sea-only pickup (not shown on Air Freight).',
+    'both',
+    E'No. 11, New Ipaja Road,\nBeside Ideraoluwa Central Mosque,\nAlong Itel Home Road.\nIyana Ipaja.\nLagos State. Nigeria\nPhone: +234 803 846 8441',
     true
   )
-on conflict (code) do nothing;
+on conflict (code) do update set
+  name = excluded.name,
+  country = excluded.country,
+  kind = excluded.kind,
+  freight_type = excluded.freight_type,
+  address = excluded.address,
+  is_active = excluded.is_active;
 
 -- Air goods stay on air_freight_goods; link to China receiving warehouse (freight via warehouse).
 alter table public.air_freight_goods
@@ -165,6 +163,22 @@ create policy "packing_requests_insert_own"
   for insert
   to authenticated
   with check (user_id = auth.uid());
+
+-- Compensating delete: user may remove their own pending header only if it has no goods.
+-- Used when packing_requests INSERT succeeds but air_packing_request_items INSERT fails.
+drop policy if exists "packing_requests_delete_own_empty_pending" on public.packing_requests;
+create policy "packing_requests_delete_own_empty_pending"
+  on public.packing_requests
+  for delete
+  to authenticated
+  using (
+    user_id = auth.uid()
+    and status = 'pending_packing'
+    and not exists (
+      select 1 from public.air_packing_request_items i
+      where i.request_id = packing_requests.id
+    )
+  );
 
 drop policy if exists "packing_requests_admin_all" on public.packing_requests;
 create policy "packing_requests_admin_all"

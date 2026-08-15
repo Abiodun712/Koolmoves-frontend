@@ -7,6 +7,8 @@ import AirFreightPlaceholder from "./pages/AirFreightPlaceholder";
 import SeaFreightPlaceholder from "./pages/SeaFreightPlaceholder";
 import AdminDashboard from "./components/AdminDashboard";
 import AdminAirFreight from "./components/AdminAirFreight";
+import AdminSeaFreight from "./components/AdminSeaFreight";
+import AdminShippingRequests from "./components/AdminShippingRequests";
 import UserDashboard from "./components/UserDashboard";
 import { RequireAuth, RequireAdmin } from "./components/RouteGuards";
 
@@ -67,6 +69,24 @@ export default function App() {
         element={
           <RequireAdmin>
             <AdminAirFreight />
+          </RequireAdmin>
+        }
+      />
+
+      <Route
+        path="/admin/sea-freight"
+        element={
+          <RequireAdmin>
+            <AdminSeaFreight />
+          </RequireAdmin>
+        }
+      />
+
+      <Route
+        path="/admin/shipping-requests"
+        element={
+          <RequireAdmin>
+            <AdminShippingRequests />
           </RequireAdmin>
         }
       />

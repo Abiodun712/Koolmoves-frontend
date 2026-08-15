@@ -169,9 +169,9 @@ export default function HomeDashboard() {
             </div>
             <h2 className="text-sm font-bold text-[#0F172A]">Sea Freight</h2>
             <p className="text-xs text-gray-500 mt-1 leading-relaxed">
-              Sea logistics booking — coming soon.
+              Sea logistics: warehouse address, CBM goods, and packing requests.
             </p>
-            <span className="inline-block mt-4 text-xs font-bold text-slate-500">View placeholder →</span>
+            <span className="inline-block mt-4 text-xs font-bold text-emerald-600">Open Sea Freight →</span>
           </Link>
         </div>
 

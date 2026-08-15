@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabaseClient';
@@ -7,14 +7,7 @@ import {
   normalizeWarehouse,
   type Warehouse,
 } from '../types/warehouse';
-import AdminAirShipments from './AdminAirShipments';
-import AdminWarehouses from './AdminWarehouses';
-import {
-  formatAirFreightFeeSetting,
-  parseNonNegativeFeeInput,
-  storedAirFreightFeeToInput,
-  storedFeeToInput,
-} from '../lib/logisticsSettings';
+import AdminSeaShipments from './AdminSeaShipments';
 
 type VerifiedUser = {
   user_id: string;
@@ -37,11 +30,15 @@ const emptyForm = {
   supplier_phone: '',
   tracking_number: '',
   quantity: '',
-  weight_kg: '',
+  cbm: '',
   admin_remarks: '',
 };
 
-export default function AdminAirFreight() {
+/**
+ * Admin Sea goods receiving at CN-SEA. Parallel to Air receiving; does not
+ * change Air costing, payment, storage, or shipment progression.
+ */
+export default function AdminSeaFreight() {
   const navigate = useNavigate();
   const { logout, user } = useAuth();
 
@@ -56,160 +53,61 @@ export default function AdminAirFreight() {
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [airChinaWarehouse, setAirChinaWarehouse] = useState<Warehouse | null>(null);
+  const [seaChinaWarehouse, setSeaChinaWarehouse] = useState<Warehouse | null>(null);
   const [warehouseLoadError, setWarehouseLoadError] = useState<string | null>(null);
-
-  const [airFreightFee, setAirFreightFee] = useState('');
-  const [airFreightFeeInput, setAirFreightFeeInput] = useState('');
-  const [seaFreightFeeInput, setSeaFreightFeeInput] = useState('');
-  const [packingFeeInput, setPackingFeeInput] = useState('');
-  const [clearingFeeInput, setClearingFeeInput] = useState('');
-  const [storageFeeInput, setStorageFeeInput] = useState('');
-  const [airFreightNotice, setAirFreightNotice] = useState('');
-  const [defaultPackingFee, setDefaultPackingFee] = useState<number | null>(null);
-  const [defaultClearingFee, setDefaultClearingFee] = useState<number | null>(null);
-  const [storageFeePerDay, setStorageFeePerDay] = useState<number | null>(null);
-  const [savingSettings, setSavingSettings] = useState(false);
-  const [settingsMessage, setSettingsMessage] = useState<string | null>(null);
-  const [settingsError, setSettingsError] = useState<string | null>(null);
-
-  const loadAirChinaWarehouse = useCallback(async () => {
-    setWarehouseLoadError(null);
-    const { data, error } = await supabase
-      .from('warehouses')
-      .select('*')
-      .eq('code', 'CN-AIR')
-      .eq('is_active', true)
-      .maybeSingle();
-
-    if (error || !data) {
-      setAirChinaWarehouse(null);
-      setWarehouseLoadError(
-        error?.message ||
-          'Air China Warehouse not found. Run supabase/warehouses.sql in Supabase.'
-      );
-      return;
-    }
-
-    setAirChinaWarehouse(normalizeWarehouse(data));
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
-    const loadAirFreightSettings = async () => {
+    const loadSeaChinaWarehouse = async () => {
+      setWarehouseLoadError(null);
       const { data, error } = await supabase
-        .from('site_settings')
-        .select('key, value')
-        .in('key', [
-          'air_freight_fee',
-          'air_freight_notice',
-          'sea_freight_fee',
-          'packing_fee',
-          'clearing_fee',
-          'storage_fee_per_day',
-        ]);
+        .from('warehouses')
+        .select('*')
+        .eq('code', 'CN-SEA')
+        .eq('is_active', true)
+        .maybeSingle();
 
-      if (cancelled || error || !data) return;
+      if (cancelled) return;
 
-      const map: Record<string, string> = {};
-      data.forEach((row: { key: string; value: string }) => {
-        map[row.key] = row.value ?? '';
-      });
-      setAirFreightFee(map.air_freight_fee || '');
-      setAirFreightFeeInput(storedAirFreightFeeToInput(map.air_freight_fee));
-      setSeaFreightFeeInput(storedFeeToInput(map.sea_freight_fee));
-      setPackingFeeInput(storedFeeToInput(map.packing_fee));
-      setClearingFeeInput(storedFeeToInput(map.clearing_fee));
-      setStorageFeeInput(storedFeeToInput(map.storage_fee_per_day));
-      setAirFreightNotice(map.air_freight_notice || '');
-      const packing = parseNonNegativeFeeInput(storedFeeToInput(map.packing_fee) || '0', 'Packing fee');
-      const clearing = parseNonNegativeFeeInput(
-        storedFeeToInput(map.clearing_fee) || '0',
-        'Clearing fee'
-      );
-      setDefaultPackingFee(packing.ok ? packing.value : null);
-      setDefaultClearingFee(clearing.ok ? clearing.value : null);
-      const storage = parseNonNegativeFeeInput(
-        storedFeeToInput(map.storage_fee_per_day) || '0',
-        'Storage fee per day'
-      );
-      setStorageFeePerDay(storage.ok ? storage.value : null);
+      if (error || !data) {
+        setSeaChinaWarehouse(null);
+        setWarehouseLoadError(
+          error?.message ||
+            'Sea China Warehouse not found. Ensure warehouses are seeded in Supabase.'
+        );
+        return;
+      }
+
+      setSeaChinaWarehouse(normalizeWarehouse(data));
     };
 
-    void loadAirChinaWarehouse();
-    void loadAirFreightSettings();
+    void loadSeaChinaWarehouse();
     return () => {
       cancelled = true;
     };
-  }, [loadAirChinaWarehouse]);
-
-  const saveLogisticsFeeSettings = async () => {
-    setSettingsMessage(null);
-    setSettingsError(null);
-
-    const air = parseNonNegativeFeeInput(airFreightFeeInput, 'Air freight fee');
-    const sea = parseNonNegativeFeeInput(seaFreightFeeInput, 'Sea freight fee');
-    const packing = parseNonNegativeFeeInput(packingFeeInput, 'Packing fee');
-    const clearing = parseNonNegativeFeeInput(clearingFeeInput, 'Clearing fee');
-    const storage = parseNonNegativeFeeInput(storageFeeInput, 'Storage fee per day');
-    const firstError = [air, sea, packing, clearing, storage].find((r) => !r.ok);
-    if (firstError && !firstError.ok) {
-      setSettingsError(firstError.error);
-      return;
-    }
-    if (!air.ok || !sea.ok || !packing.ok || !clearing.ok || !storage.ok) return;
-
-    const publishedAirFee = formatAirFreightFeeSetting(air.value);
-    setSavingSettings(true);
-    try {
-      const updatedAt = new Date().toISOString();
-      const { error } = await supabase.from('site_settings').upsert(
-        [
-          { key: 'air_freight_fee', value: publishedAirFee, updated_at: updatedAt },
-          { key: 'sea_freight_fee', value: String(sea.value), updated_at: updatedAt },
-          { key: 'packing_fee', value: String(packing.value), updated_at: updatedAt },
-          { key: 'clearing_fee', value: String(clearing.value), updated_at: updatedAt },
-          { key: 'storage_fee_per_day', value: String(storage.value), updated_at: updatedAt },
-          { key: 'air_freight_notice', value: airFreightNotice.trim(), updated_at: updatedAt },
-        ],
-        { onConflict: 'key' }
-      );
-      if (error) throw error;
-      setAirFreightFee(publishedAirFee);
-      setDefaultPackingFee(packing.value);
-      setDefaultClearingFee(clearing.value);
-      setStorageFeePerDay(storage.value);
-      setSettingsMessage(
-        'Logistics fees saved. Existing shipment rates and costs were not changed.'
-      );
-    } catch (err: any) {
-      setSettingsError(err?.message || 'Failed to save Logistics fee settings.');
-    } finally {
-      setSavingSettings(false);
-    }
-  };
+  }, []);
 
   const derivedFreightType = useMemo(() => {
-    if (!airChinaWarehouse) return null;
+    if (!seaChinaWarehouse) return null;
     try {
-      return freightTypeFromReceivingWarehouse(airChinaWarehouse);
+      return freightTypeFromReceivingWarehouse(seaChinaWarehouse);
     } catch {
       return null;
     }
-  }, [airChinaWarehouse]);
+  }, [seaChinaWarehouse]);
 
   const canSave = useMemo(() => {
     return (
       Boolean(verifiedUser) &&
-      Boolean(airChinaWarehouse) &&
+      Boolean(seaChinaWarehouse) &&
       form.goods_description.trim().length > 0 &&
       form.date_received.trim().length > 0 &&
       form.quantity.trim().length > 0 &&
-      form.weight_kg.trim().length > 0 &&
+      form.cbm.trim().length > 0 &&
       !saving &&
       !uploadingPhoto
     );
-  }, [verifiedUser, airChinaWarehouse, form, saving, uploadingPhoto]);
+  }, [verifiedUser, seaChinaWarehouse, form, saving, uploadingPhoto]);
 
   const handleLogout = async () => {
     await logout();
@@ -275,7 +173,7 @@ export default function AdminAirFreight() {
     setUploadingPhoto(true);
     try {
       const fileExt = photoFile.name.split('.').pop() || 'jpg';
-      const fileName = `air-freight/${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`;
+      const fileName = `sea-freight/${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`;
 
       const { error: uploadError } = await supabase.storage
         .from('payment-receipts')
@@ -305,9 +203,9 @@ export default function AdminAirFreight() {
       return;
     }
 
-    if (!airChinaWarehouse || derivedFreightType !== 'air') {
+    if (!seaChinaWarehouse || derivedFreightType !== 'sea') {
       setSaveError(
-        'Air China Warehouse is required. Goods are saved as Air only (freight type is automatic).'
+        'Sea China Warehouse is required. Goods are saved as Sea only (freight type is automatic).'
       );
       return;
     }
@@ -319,13 +217,13 @@ export default function AdminAirFreight() {
     }
 
     const quantity = Number(form.quantity);
-    const weightKg = Number(form.weight_kg);
+    const cbm = Number(form.cbm);
     if (!Number.isFinite(quantity) || quantity <= 0) {
       setSaveError('Quantity must be a number greater than 0.');
       return;
     }
-    if (!Number.isFinite(weightKg) || weightKg <= 0) {
-      setSaveError('Weight (kg) must be a number greater than 0.');
+    if (!Number.isFinite(cbm) || cbm <= 0) {
+      setSaveError('CBM must be a number greater than 0.');
       return;
     }
 
@@ -345,31 +243,35 @@ export default function AdminAirFreight() {
       const payload = {
         user_id: verifiedUser.user_id,
         km_id: verifiedUser.km_id,
-        china_warehouse_id: airChinaWarehouse.id,
+        china_warehouse_id: seaChinaWarehouse.id,
         date_received: form.date_received,
         goods_description: description,
         supplier_phone: form.supplier_phone.trim() || null,
         tracking_number: form.tracking_number.trim() || null,
         quantity,
-        weight_kg: weightKg,
+        cbm,
         photo_url: photoUrl,
         admin_remarks: form.admin_remarks.trim() || null,
+        status: 'available',
         created_by: user?.id ?? null,
       };
 
-      const { error } = await supabase.from('air_freight_goods').insert(payload);
+      const { error } = await supabase.from('sea_freight_goods').insert(payload);
 
       if (error) {
-        setSaveError(error.message || 'Failed to save received goods.');
+        setSaveError(
+          error.message ||
+            'Failed to save received Sea goods. Apply supabase/sea_freight_goods.sql in Supabase.'
+        );
         return;
       }
 
       setSaveMessage(
-        `Saved AIR goods for ${verifiedUser.km_id} at ${airChinaWarehouse.name}. Visible on the user's Air Freight page.`
+        `Saved SEA goods for ${verifiedUser.km_id} at ${seaChinaWarehouse.name}. Visible on the user's Sea Freight page.`
       );
       resetFormKeepUser();
     } catch (err: any) {
-      setSaveError(err?.message || 'Failed to save received goods.');
+      setSaveError(err?.message || 'Failed to save received Sea goods.');
     } finally {
       setSaving(false);
     }
@@ -380,25 +282,25 @@ export default function AdminAirFreight() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center pb-6 border-b border-purple-800/60 gap-4">
         <div>
           <h1 className="text-2xl md:text-3xl font-extrabold bg-gradient-to-r from-pink-400 via-purple-300 to-cyan-400 bg-clip-text text-transparent">
-            Air Freight — Receive Goods
+            Sea Freight — Receive Goods
           </h1>
           <p className="text-xs md:text-sm text-purple-200 mt-1">
-            Phase 1: enter a KM-ID and record goods received at the Air China Warehouse. Saved as Air
-            goods only.
+            Enter a KM-ID and record goods received at the Sea China Warehouse. Measurement is CBM
+            (not KG).
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <Link
+            to="/admin/air-freight"
+            className="bg-cyan-800/65 hover:bg-cyan-700 text-cyan-100 px-4 py-2 rounded-xl text-xs font-semibold transition-all border border-cyan-500/30 shadow"
+          >
+            Air Freight
+          </Link>
           <Link
             to="/admin/shipping-requests"
             className="bg-amber-800/65 hover:bg-amber-700 text-amber-100 px-4 py-2 rounded-xl text-xs font-semibold transition-all border border-amber-500/30 shadow"
           >
             Shipping Requests
-          </Link>
-          <Link
-            to="/admin/sea-freight"
-            className="bg-sky-800/65 hover:bg-sky-700 text-sky-100 px-4 py-2 rounded-xl text-xs font-semibold transition-all border border-sky-500/30 shadow"
-          >
-            Sea Freight
           </Link>
           <Link
             to="/admin"
@@ -416,158 +318,38 @@ export default function AdminAirFreight() {
         </div>
       </div>
 
-      {/* LOGISTICS FEE SETTINGS (site_settings) */}
-      <div className="p-5 bg-slate-900/90 rounded-2xl border border-amber-500/40 shadow-xl space-y-4">
-        <div>
-          <h2 className="text-sm font-bold text-amber-200 uppercase tracking-wider">
-            Logistics fee settings
-          </h2>
-          <p className="text-xs text-purple-300/80 mt-1">
-            Saved to site settings. Changing these does not update existing shipment snapshots
-            (rate per kg, packing fee, or clearing/landing cost).
-          </p>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label className="block text-[11px] font-bold text-amber-100/90 mb-1">
-              Air freight fee (per kg)
-            </label>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={airFreightFeeInput}
-              onChange={(e) => setAirFreightFeeInput(e.target.value)}
-              placeholder="e.g. 8500"
-              className="w-full p-2.5 rounded-xl bg-slate-800 text-white border border-amber-500/40 focus:outline-none focus:border-amber-300 text-sm"
-            />
-          </div>
-          <div>
-            <label className="block text-[11px] font-bold text-amber-100/90 mb-1">
-              Sea freight fee (per CBM)
-            </label>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={seaFreightFeeInput}
-              onChange={(e) => setSeaFreightFeeInput(e.target.value)}
-              placeholder="e.g. 120000"
-              className="w-full p-2.5 rounded-xl bg-slate-800 text-white border border-amber-500/40 focus:outline-none focus:border-amber-300 text-sm"
-            />
-          </div>
-          <div>
-            <label className="block text-[11px] font-bold text-amber-100/90 mb-1">
-              Default packing fee
-            </label>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={packingFeeInput}
-              onChange={(e) => setPackingFeeInput(e.target.value)}
-              placeholder="e.g. 5000"
-              className="w-full p-2.5 rounded-xl bg-slate-800 text-white border border-amber-500/40 focus:outline-none focus:border-amber-300 text-sm"
-            />
-          </div>
-          <div>
-            <label className="block text-[11px] font-bold text-amber-100/90 mb-1">
-              Default clearing fee
-            </label>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={clearingFeeInput}
-              onChange={(e) => setClearingFeeInput(e.target.value)}
-              placeholder="e.g. 15000"
-              className="w-full p-2.5 rounded-xl bg-slate-800 text-white border border-amber-500/40 focus:outline-none focus:border-amber-300 text-sm"
-            />
-          </div>
-          <div className="sm:col-span-2">
-            <label className="block text-[11px] font-bold text-amber-100/90 mb-1">
-              Storage fee per day (after 14-day free period)
-            </label>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={storageFeeInput}
-              onChange={(e) => setStorageFeeInput(e.target.value)}
-              placeholder="e.g. 2000"
-              className="w-full p-2.5 rounded-xl bg-slate-800 text-white border border-amber-500/40 focus:outline-none focus:border-amber-300 text-sm"
-            />
-          </div>
-          <div className="sm:col-span-2">
-            <label className="block text-[11px] font-bold text-amber-100/90 mb-1">
-              Broadcast notice
-            </label>
-            <textarea
-              value={airFreightNotice}
-              onChange={(e) => setAirFreightNotice(e.target.value)}
-              rows={3}
-              placeholder="Message shown to all Air Freight users"
-              className="w-full p-2.5 rounded-xl bg-slate-800 text-white border border-amber-500/40 focus:outline-none focus:border-amber-300 text-sm resize-y"
-            />
-          </div>
-        </div>
-        {settingsError && (
-          <p className="text-xs text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-xl px-3 py-2">
-            {settingsError}
-          </p>
-        )}
-        {settingsMessage && (
-          <p className="text-xs text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 rounded-xl px-3 py-2">
-            {settingsMessage}
-          </p>
-        )}
-        <button
-          type="button"
-          onClick={saveLogisticsFeeSettings}
-          disabled={savingSettings}
-          className="bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white px-4 py-2.5 rounded-xl text-xs font-bold"
-        >
-          {savingSettings ? 'Saving...' : 'Save Logistics fees'}
-        </button>
-      </div>
-
-      <AdminAirShipments
-        publishedFeeText={airFreightFee}
-        defaultPackingFee={defaultPackingFee}
-        defaultClearingFee={defaultClearingFee}
-        storageFeePerDay={storageFeePerDay}
-      />
-
-      <AdminWarehouses onSaved={() => void loadAirChinaWarehouse()} />
-
-      {/* CHINA RECEIVING WAREHOUSE (freight type automatic) */}
       <div className="p-5 bg-slate-900/90 rounded-2xl border border-cyan-500/40 shadow-xl space-y-2">
         <h2 className="text-sm font-bold text-cyan-200 uppercase tracking-wider">
           Receiving warehouse
         </h2>
-        {airChinaWarehouse && derivedFreightType ? (
+        {seaChinaWarehouse && derivedFreightType ? (
           <div className="text-xs space-y-1">
-            <p className="font-bold text-white">{airChinaWarehouse.name}</p>
+            <p className="font-bold text-white">{seaChinaWarehouse.name}</p>
             <p className="text-cyan-100/90">
               Freight type: <span className="font-extrabold uppercase">{derivedFreightType}</span>{' '}
               (automatic — not selectable)
             </p>
-            {airChinaWarehouse.address && (
-              <p className="text-purple-200/80 whitespace-pre-line pt-1">{airChinaWarehouse.address}</p>
+            {seaChinaWarehouse.address && (
+              <p className="text-purple-200/80 whitespace-pre-line pt-1">
+                {seaChinaWarehouse.address}
+              </p>
             )}
           </div>
         ) : (
           <p className="text-xs text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-xl px-3 py-2">
-            {warehouseLoadError || 'Loading Air China Warehouse...'}
+            {warehouseLoadError || 'Loading Sea China Warehouse...'}
           </p>
         )}
       </div>
 
-      {/* KM ID VERIFY */}
       <div className="p-5 bg-slate-900/90 rounded-2xl border border-purple-500/40 shadow-xl space-y-4">
         <div>
-          <h2 className="text-sm font-bold text-purple-200 uppercase tracking-wider">1. Find user by KM ID</h2>
-          <p className="text-xs text-purple-300/80 mt-1">Search and verify before creating a received-goods record.</p>
+          <h2 className="text-sm font-bold text-purple-200 uppercase tracking-wider">
+            1. Find user by KM ID
+          </h2>
+          <p className="text-xs text-purple-300/80 mt-1">
+            Search and verify before creating a received-goods record.
+          </p>
         </div>
         <div className="flex flex-col sm:flex-row gap-2">
           <input
@@ -607,7 +389,6 @@ export default function AdminAirFreight() {
         )}
       </div>
 
-      {/* RECEIVE FORM */}
       <form
         onSubmit={saveReceivedGoods}
         className={`p-5 bg-slate-900/90 rounded-2xl border border-purple-500/40 shadow-xl space-y-4 ${
@@ -615,7 +396,9 @@ export default function AdminAirFreight() {
         }`}
       >
         <div>
-          <h2 className="text-sm font-bold text-purple-200 uppercase tracking-wider">2. Received goods details</h2>
+          <h2 className="text-sm font-bold text-purple-200 uppercase tracking-wider">
+            2. Received goods details
+          </h2>
           <p className="text-xs text-purple-300/80 mt-1">
             {verifiedUser
               ? `Creating record for ${verifiedUser.km_id}`
@@ -662,7 +445,7 @@ export default function AdminAirFreight() {
               onChange={(e) => updateField('goods_description', e.target.value)}
               required
               rows={3}
-              placeholder="Describe the received goods"
+              placeholder="Describe the received Sea goods"
               className="w-full p-2.5 rounded-xl bg-slate-800 text-white border border-purple-500/50 focus:outline-none focus:border-cyan-400"
             />
           </label>
@@ -685,13 +468,13 @@ export default function AdminAirFreight() {
             />
           </label>
           <label className="space-y-1 text-xs">
-            <span className="font-bold text-purple-300">Weight (kg)</span>
+            <span className="font-bold text-purple-300">CBM *</span>
             <input
               type="number"
-              min="0.01"
-              step="0.01"
-              value={form.weight_kg}
-              onChange={(e) => updateField('weight_kg', e.target.value)}
+              min="0.001"
+              step="0.001"
+              value={form.cbm}
+              onChange={(e) => updateField('cbm', e.target.value)}
               required
               className="w-full p-2.5 rounded-xl bg-slate-800 text-white border border-purple-500/50 focus:outline-none focus:border-cyan-400"
             />
@@ -705,7 +488,7 @@ export default function AdminAirFreight() {
               className="w-full text-xs text-purple-200 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-purple-700 file:text-white file:text-xs file:font-semibold"
             />
             <span className="text-[10px] text-purple-400">
-              Uses existing storage bucket (payment-receipts / air-freight/).
+              Uses existing storage bucket (payment-receipts / sea-freight/).
             </span>
           </label>
           <label className="space-y-1 text-xs sm:col-span-2">
@@ -736,9 +519,11 @@ export default function AdminAirFreight() {
           disabled={!canSave}
           className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl text-xs font-bold"
         >
-          {saving || uploadingPhoto ? 'Saving...' : 'Save received goods'}
+          {saving || uploadingPhoto ? 'Saving...' : 'Save received Sea goods'}
         </button>
       </form>
+
+      <AdminSeaShipments />
     </div>
   );
 }

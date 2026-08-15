@@ -43,6 +43,24 @@ export function computeShipmentTotalDue(input: ShipmentCostInputs): ShipmentCost
   return { freightCharge, totalAmountDue };
 }
 
+/** Sea: freight_charge = final_packed_cbm × sea_freight_fee. Storage is not included. */
+export function computeSeaShipmentTotalDue(input: {
+  finalPackedCbm: number;
+  ratePerCbm: number;
+  packingFee: number;
+  clearingFee: number;
+}): ShipmentCostResult {
+  const cbm = Number(input.finalPackedCbm) || 0;
+  const rate = Number(input.ratePerCbm) || 0;
+  const packingFee = Number(input.packingFee) || 0;
+  const clearingFee = Number(input.clearingFee) || 0;
+
+  const freightCharge = roundMoney(cbm * rate);
+  const totalAmountDue = roundMoney(freightCharge + packingFee + clearingFee);
+
+  return { freightCharge, totalAmountDue };
+}
+
 function roundMoney(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }

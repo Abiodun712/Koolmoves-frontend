@@ -28,21 +28,9 @@ create table if not exists public.shipments (
   id uuid primary key default gen_random_uuid(),
   shipment_code text not null unique,
   freight_type text not null check (freight_type in ('air', 'sea')),
-  status text not null default 'draft'
-    check (
-      status in (
-        'draft',
-        'assigned',
-        'packing',
-        'packed',
-        'finalized',
-        'in_transit',
-        'arrived_nigeria',
-        'ready_for_pickup',
-        'completed',
-        'cancelled'
-      )
-    ),
+  -- Status set is shared; Air is forbidden from in_transit via table CHECK below.
+  -- Existing DBs: apply supabase/shipments_status_model.sql (do not re-run this whole file).
+  status text not null default 'draft',
   user_id uuid not null references auth.users (id),
   km_id text not null,
   packing_request_id uuid references public.packing_requests (id),
@@ -63,7 +51,23 @@ create table if not exists public.shipments (
   finalized_at timestamptz,
   created_by uuid references auth.users (id),
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  constraint shipments_status_by_freight_check check (
+    status in (
+      'draft',
+      'assigned',
+      'packing',
+      'packed',
+      'finalized',
+      'shipped',
+      'in_transit',
+      'arrived_nigeria',
+      'ready_for_pickup',
+      'completed',
+      'cancelled'
+    )
+    and not (freight_type = 'air' and status = 'in_transit')
+  )
 );
 
 create index if not exists shipments_user_id_idx on public.shipments (user_id);
