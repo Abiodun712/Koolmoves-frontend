@@ -104,8 +104,8 @@ export default function HomeDashboard() {
         <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm">
           <h1 className="text-lg font-extrabold text-gray-900">Welcome, {displayName}</h1>
           <p className="text-xs text-gray-500 mt-0.5">
-            Choose a service below, or use the navigation at the top. Your KM ID stays visible in
-            the header.
+            Choose a service below, or use the app navigation. Your KM ID stays visible in the
+            header.
           </p>
         </div>
 

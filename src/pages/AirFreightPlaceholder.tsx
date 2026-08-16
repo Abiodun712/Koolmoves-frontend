@@ -616,8 +616,8 @@ export default function AirFreightPlaceholder() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <div className="max-w-4xl mx-auto p-4 space-y-6 pb-72">
+    <div className="w-full min-w-0 overflow-x-hidden">
+      <div className="max-w-4xl mx-auto p-4 space-y-5 sm:space-y-6 pb-6">
         <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm">
           <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
             Logistics
@@ -672,7 +672,7 @@ export default function AirFreightPlaceholder() {
               type="button"
               onClick={copyChinaAddress}
               disabled={!airChinaWarehouse?.address}
-              className="shrink-0 text-xs font-bold px-4 py-2.5 rounded-xl bg-emerald-600 text-white hover:bg-emerald-500 disabled:bg-gray-200 disabled:text-gray-500 disabled:cursor-not-allowed"
+              className="w-full sm:w-auto shrink-0 min-h-[44px] text-xs font-bold px-4 py-2.5 rounded-xl bg-emerald-600 text-white hover:bg-emerald-500 disabled:bg-gray-200 disabled:text-gray-500 disabled:cursor-not-allowed"
             >
               {copiedChinaAddress ? 'Copied' : 'Copy Address'}
             </button>
@@ -777,7 +777,7 @@ export default function AirFreightPlaceholder() {
                         <button
                           type="button"
                           onClick={() => selectGood(item.id)}
-                          className="shrink-0 min-h-[44px] px-4 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-500"
+                          className="w-full sm:w-auto shrink-0 min-h-[44px] px-4 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-500"
                         >
                           Add
                         </button>
@@ -807,7 +807,7 @@ export default function AirFreightPlaceholder() {
                         <img
                           src={item.photo_url}
                           alt={item.goods_description || 'Goods photo'}
-                          className="max-h-40 rounded-xl border border-gray-200 object-cover"
+                          className="w-full max-w-full max-h-40 rounded-xl border border-gray-200 object-cover"
                         />
                       ) : null}
                     </div>
@@ -862,7 +862,7 @@ export default function AirFreightPlaceholder() {
                         <button
                           type="button"
                           onClick={() => removeSelected(item.id)}
-                          className="shrink-0 min-h-[44px] px-4 rounded-xl border border-gray-300 bg-white text-gray-800 text-xs font-bold hover:bg-gray-50"
+                          className="w-full sm:w-auto shrink-0 min-h-[44px] px-4 rounded-xl border border-gray-300 bg-white text-gray-800 text-xs font-bold hover:bg-gray-50"
                         >
                           Remove
                         </button>
@@ -873,6 +873,97 @@ export default function AirFreightPlaceholder() {
               </div>
             </div>
           )}
+        </div>
+
+        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-200 shadow-sm space-y-4 w-full min-w-0">
+          <div>
+            <h2 className="text-sm font-bold text-[#0F172A]">Request packing</h2>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Choose a Nigeria pickup warehouse, add optional packing notes, then submit.
+            </p>
+          </div>
+          <label className="block w-full space-y-1 min-w-0">
+            <span className="text-[10px] font-bold uppercase tracking-wide text-gray-500">
+              Nigeria pickup warehouse (required)
+            </span>
+            <select
+              value={pickupWarehouseId}
+              onChange={(e) => {
+                setPickupWarehouseId(e.target.value);
+                setSubmitMessage(null);
+                setSubmitError(null);
+              }}
+              disabled={selectedCount === 0 || nigeriaPickups.length === 0}
+              className="w-full min-h-[44px] text-xs font-semibold px-3 py-2.5 rounded-xl border border-gray-200 bg-white text-gray-800 disabled:bg-gray-100 disabled:text-gray-400"
+            >
+              <option value="">
+                {selectedCount === 0
+                  ? 'Select goods first…'
+                  : nigeriaPickups.length === 0
+                    ? 'No Air-eligible pickups available'
+                    : 'Choose Nigeria pickup…'}
+              </option>
+              {nigeriaPickups.map((warehouse) => (
+                <option key={warehouse.id} value={warehouse.id}>
+                  {warehouse.name} ({warehouse.freight_type})
+                </option>
+              ))}
+            </select>
+          </label>
+          {selectedPickup && (
+            <div className="p-3 rounded-xl border border-slate-200 bg-slate-50 space-y-1 w-full min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                Selected Nigeria pickup
+              </p>
+              <p className="text-sm font-bold text-gray-900 break-words">{selectedPickup.name}</p>
+              {selectedPickup.address ? (
+                <p className="text-xs text-gray-800 whitespace-pre-line leading-relaxed break-words">
+                  {selectedPickup.address}
+                </p>
+              ) : (
+                <p className="text-xs text-amber-700">Full address/phone not published yet.</p>
+              )}
+            </div>
+          )}
+          <label className="block w-full space-y-1 min-w-0">
+            <span className="text-[10px] font-bold uppercase tracking-wide text-gray-500">
+              Packing Instructions / Remarks
+            </span>
+            <textarea
+              value={packingInstructions}
+              onChange={(e) => setPackingInstructions(e.target.value)}
+              rows={3}
+              disabled={selectedCount === 0}
+              placeholder="Optional notes for admin when packing your goods (saved with this shipping request)"
+              className="w-full text-xs font-medium px-3 py-2.5 rounded-xl border border-gray-200 bg-white text-gray-800 disabled:bg-gray-100 disabled:text-gray-400 resize-y"
+            />
+            <span className="text-[10px] text-gray-500">
+              Saved on your packing request only — separate from any later admin shipment remarks.
+            </span>
+          </label>
+          <p className="text-xs text-gray-600">
+            {selectedCount === 0
+              ? 'Select one or more Air goods, then choose a Nigeria pickup warehouse.'
+              : `${selectedCount} item${selectedCount === 1 ? '' : 's'} selected for packing.`}
+          </p>
+          {submitError && (
+            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+              {submitError}
+            </p>
+          )}
+          {submitMessage && (
+            <p className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2">
+              {submitMessage}
+            </p>
+          )}
+          <button
+            type="button"
+            disabled={!canRequestPacking}
+            onClick={requestPacking}
+            className="w-full min-h-[48px] text-sm font-bold px-4 py-3 rounded-xl bg-emerald-600 text-white hover:bg-emerald-500 disabled:bg-gray-200 disabled:text-gray-500 disabled:cursor-not-allowed"
+          >
+            {submitting ? 'Submitting…' : 'Request Packing'}
+          </button>
         </div>
 
         {shipments.length > 0 && (
@@ -930,7 +1021,7 @@ export default function AirFreightPlaceholder() {
                       <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 mb-2">
                         Progress
                       </p>
-                      <div className="grid grid-cols-4 gap-1">
+                      <div className="grid grid-cols-4 gap-0.5 sm:gap-1 min-w-0">
                         {AIR_USER_PROGRESS_STEPS.map((step, index) => {
                           const reached = progressIndex >= index;
                           const current = progressIndex === index;
@@ -1017,7 +1108,7 @@ export default function AirFreightPlaceholder() {
                                 <img
                                   src={good.photo_url}
                                   alt={good.goods_description || 'Goods photo'}
-                                  className="mt-1 max-h-28 rounded-lg border border-gray-200 object-cover"
+                                  className="mt-1 w-full max-w-full max-h-28 rounded-lg border border-gray-200 object-cover"
                                 />
                               ) : null}
                             </li>
@@ -1191,95 +1282,6 @@ export default function AirFreightPlaceholder() {
               })}
           </div>
         )}
-
-        <div className="fixed bottom-0 inset-x-0 z-20 border-t border-gray-200 bg-white/95 backdrop-blur-sm">
-          <div className="max-w-4xl mx-auto px-4 py-3 space-y-2">
-            <div className="flex flex-col sm:flex-row sm:items-end gap-2">
-              <label className="flex-1 space-y-1">
-                <span className="text-[10px] font-bold uppercase tracking-wide text-gray-500">
-                  Nigeria pickup warehouse (required)
-                </span>
-                <select
-                  value={pickupWarehouseId}
-                  onChange={(e) => {
-                    setPickupWarehouseId(e.target.value);
-                    setSubmitMessage(null);
-                    setSubmitError(null);
-                  }}
-                  disabled={selectedCount === 0 || nigeriaPickups.length === 0}
-                  className="w-full text-xs font-semibold px-3 py-2.5 rounded-xl border border-gray-200 bg-white text-gray-800 disabled:bg-gray-100 disabled:text-gray-400"
-                >
-                  <option value="">
-                    {selectedCount === 0
-                      ? 'Select goods first…'
-                      : nigeriaPickups.length === 0
-                        ? 'No Air-eligible pickups available'
-                        : 'Choose Nigeria pickup…'}
-                  </option>
-                  {nigeriaPickups.map((warehouse) => (
-                    <option key={warehouse.id} value={warehouse.id}>
-                      {warehouse.name} ({warehouse.freight_type})
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button
-                type="button"
-                disabled={!canRequestPacking}
-                onClick={requestPacking}
-                className="text-xs font-bold px-4 py-2.5 rounded-xl bg-emerald-600 text-white hover:bg-emerald-500 disabled:bg-gray-200 disabled:text-gray-500 disabled:cursor-not-allowed"
-              >
-                {submitting ? 'Submitting…' : 'Request Packing'}
-              </button>
-            </div>
-            <label className="block space-y-1">
-              <span className="text-[10px] font-bold uppercase tracking-wide text-gray-500">
-                Packing Instructions / Remarks
-              </span>
-              <textarea
-                value={packingInstructions}
-                onChange={(e) => setPackingInstructions(e.target.value)}
-                rows={2}
-                disabled={selectedCount === 0}
-                placeholder="Optional notes for admin when packing your goods (saved with this shipping request)"
-                className="w-full text-xs font-medium px-3 py-2 rounded-xl border border-gray-200 bg-white text-gray-800 disabled:bg-gray-100 disabled:text-gray-400 resize-y"
-              />
-              <span className="text-[10px] text-gray-500">
-                Saved on your packing request only — separate from any later admin shipment remarks.
-              </span>
-            </label>
-            {selectedPickup && (
-              <div className="p-3 rounded-xl border border-slate-200 bg-slate-50 space-y-1">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
-                  Selected Nigeria pickup
-                </p>
-                <p className="text-sm font-bold text-gray-900">{selectedPickup.name}</p>
-                {selectedPickup.address ? (
-                  <p className="text-xs text-gray-800 whitespace-pre-line leading-relaxed">
-                    {selectedPickup.address}
-                  </p>
-                ) : (
-                  <p className="text-xs text-amber-700">Full address/phone not published yet.</p>
-                )}
-              </div>
-            )}
-            <p className="text-xs text-gray-600">
-              {selectedCount === 0
-                ? 'Select one or more Air goods, then choose a Nigeria pickup warehouse.'
-                : `${selectedCount} item${selectedCount === 1 ? '' : 's'} selected for packing.`}
-            </p>
-            {submitError && (
-              <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
-                {submitError}
-              </p>
-            )}
-            {submitMessage && (
-              <p className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2">
-                {submitMessage}
-              </p>
-            )}
-          </div>
-        </div>
       </div>
     </div>
   );
