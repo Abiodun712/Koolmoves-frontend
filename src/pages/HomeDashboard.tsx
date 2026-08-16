@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabaseClient';
 
@@ -72,8 +72,7 @@ function statusToNotification(req: any): RecentNotification {
 }
 
 export default function HomeDashboard() {
-  const { profile, logout } = useAuth();
-  const navigate = useNavigate();
+  const { profile } = useAuth();
   const [notifications, setNotifications] = useState<RecentNotification[]>([]);
   const [loadingNotifications, setLoadingNotifications] = useState(true);
 
@@ -97,37 +96,17 @@ export default function HomeDashboard() {
     fetchRecentNotifications();
   }, []);
 
-  const handleLogout = async () => {
-    await logout();
-    navigate('/login');
-  };
-
   const displayName = profile?.full_name?.trim() || 'there';
-  const kmId = profile?.km_id || 'Loading...';
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <div className="max-w-4xl mx-auto p-4 space-y-6">
+    <div className="max-w-4xl mx-auto p-4 space-y-6">
         {/* HEADER */}
-        <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div>
-            <h1 className="text-lg font-extrabold text-gray-900">Welcome, {displayName}</h1>
-            <p className="text-xs text-gray-500 mt-0.5">
-              Choose a service to continue. Your permanent KM User ID is shown below.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="bg-gray-900 text-white px-3 py-1.5 rounded-xl text-xs font-bold">
-              ID: {kmId}
-            </div>
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all"
-            >
-              Log Out
-            </button>
-          </div>
+        <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm">
+          <h1 className="text-lg font-extrabold text-gray-900">Welcome, {displayName}</h1>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Choose a service below, or use the navigation at the top. Your KM ID stays visible in
+            the header.
+          </p>
         </div>
 
         {/* SERVICE CARDS */}
@@ -213,7 +192,6 @@ export default function HomeDashboard() {
             </div>
           )}
         </div>
-      </div>
     </div>
   );
 }

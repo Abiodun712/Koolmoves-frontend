@@ -10,6 +10,7 @@ import AdminAirFreight from "./components/AdminAirFreight";
 import AdminSeaFreight from "./components/AdminSeaFreight";
 import AdminShippingRequests from "./components/AdminShippingRequests";
 import UserDashboard from "./components/UserDashboard";
+import { UserAppLayout } from "./components/UserAppNav";
 import { RequireAuth, RequireAdmin } from "./components/RouteGuards";
 
 export default function App() {
@@ -20,40 +21,17 @@ export default function App() {
       <Route path="/signup" element={<Signup />} />
 
       <Route
-        path="/home"
         element={
           <RequireAuth>
-            <HomeDashboard />
+            <UserAppLayout />
           </RequireAuth>
         }
-      />
-
-      <Route
-        path="/air-freight"
-        element={
-          <RequireAuth>
-            <AirFreightPlaceholder />
-          </RequireAuth>
-        }
-      />
-
-      <Route
-        path="/sea-freight"
-        element={
-          <RequireAuth>
-            <SeaFreightPlaceholder />
-          </RequireAuth>
-        }
-      />
-
-      <Route
-        path="/dashboard"
-        element={
-          <RequireAuth>
-            <UserDashboard />
-          </RequireAuth>
-        }
-      />
+      >
+        <Route path="/home" element={<HomeDashboard />} />
+        <Route path="/dashboard" element={<UserDashboard />} />
+        <Route path="/air-freight" element={<AirFreightPlaceholder />} />
+        <Route path="/sea-freight" element={<SeaFreightPlaceholder />} />
+      </Route>
 
       <Route
         path="/admin"
