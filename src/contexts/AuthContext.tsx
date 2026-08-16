@@ -41,27 +41,50 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
-    // Check initial active session on startup
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        await fetchProfile(session.user.id);
-      }
-      setLoading(false);
-    });
+    let cancelled = false;
 
-    // Listen to real-time login/logout changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    // Initial session: wait for profile so RequireAdmin has role before first paint.
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (cancelled) return;
       setUser(session?.user ?? null);
       if (session?.user) {
         await fetchProfile(session.user.id);
       } else {
         setProfile(null);
       }
+      if (!cancelled) setLoading(false);
+    });
+
+    // Must stay synchronous: awaiting inside this callback holds the auth lock
+    // and can stall every Supabase query (saves, upserts, etc.).
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      setUser(session?.user ?? null);
+
+      if (event === 'INITIAL_SESSION') {
+        return;
+      }
+
+      if (!session?.user) {
+        setProfile(null);
+        setLoading(false);
+        return;
+      }
+
+      if (event === 'TOKEN_REFRESHED') {
+        setLoading(false);
+        return;
+      }
+
+      void fetchProfile(session.user.id);
       setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const logout = async () => {
