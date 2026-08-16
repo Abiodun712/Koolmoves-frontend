@@ -8,6 +8,7 @@ import {
   type Warehouse,
 } from '../types/warehouse';
 import AdminSeaShipments from './AdminSeaShipments';
+import { parseNonNegativeFeeInput, storedFeeToInput } from '../lib/logisticsSettings';
 
 type VerifiedUser = {
   user_id: string;
@@ -56,6 +57,16 @@ export default function AdminSeaFreight() {
   const [seaChinaWarehouse, setSeaChinaWarehouse] = useState<Warehouse | null>(null);
   const [warehouseLoadError, setWarehouseLoadError] = useState<string | null>(null);
 
+  const [seaFreightFeeInput, setSeaFreightFeeInput] = useState('');
+  const [savingRate, setSavingRate] = useState(false);
+  const [rateMessage, setRateMessage] = useState<string | null>(null);
+  const [rateError, setRateError] = useState<string | null>(null);
+
+  const [broadcastInput, setBroadcastInput] = useState('');
+  const [savingBroadcast, setSavingBroadcast] = useState(false);
+  const [broadcastMessage, setBroadcastMessage] = useState<string | null>(null);
+  const [broadcastError, setBroadcastError] = useState<string | null>(null);
+
   useEffect(() => {
     let cancelled = false;
     const loadSeaChinaWarehouse = async () => {
@@ -87,6 +98,30 @@ export default function AdminSeaFreight() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    const loadSeaSettings = async () => {
+      const { data, error } = await supabase
+        .from('site_settings')
+        .select('key, value')
+        .in('key', ['sea_freight_fee', 'sea_freight_notice']);
+
+      if (cancelled || error || !data) return;
+
+      const map: Record<string, string> = {};
+      data.forEach((row: { key: string; value: string }) => {
+        map[row.key] = row.value ?? '';
+      });
+      setSeaFreightFeeInput(storedFeeToInput(map.sea_freight_fee));
+      setBroadcastInput(map.sea_freight_notice || '');
+    };
+
+    void loadSeaSettings();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const derivedFreightType = useMemo(() => {
     if (!seaChinaWarehouse) return null;
     try {
@@ -112,6 +147,66 @@ export default function AdminSeaFreight() {
   const handleLogout = async () => {
     await logout();
     navigate('/login');
+  };
+
+  const saveSeaFreightRate = async () => {
+    setRateMessage(null);
+    setRateError(null);
+    setBroadcastMessage(null);
+    setBroadcastError(null);
+
+    const parsed = parseNonNegativeFeeInput(seaFreightFeeInput, 'Sea freight rate');
+    if (!parsed.ok) {
+      setRateError(parsed.error);
+      return;
+    }
+
+    setSavingRate(true);
+    try {
+      const { error } = await supabase.from('site_settings').upsert(
+        {
+          key: 'sea_freight_fee',
+          value: String(parsed.value),
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'key' }
+      );
+      if (error) throw error;
+      setRateMessage('Sea Freight rate saved. This does not change existing shipment snapshots.');
+    } catch (err: any) {
+      setRateError(err?.message || 'Failed to save Sea Freight rate.');
+    } finally {
+      setSavingRate(false);
+    }
+  };
+
+  const publishSeaBroadcast = async () => {
+    setBroadcastMessage(null);
+    setBroadcastError(null);
+    setRateMessage(null);
+    setRateError(null);
+
+    setSavingBroadcast(true);
+    try {
+      const { error } = await supabase.from('site_settings').upsert(
+        {
+          key: 'sea_freight_notice',
+          value: broadcastInput.trim(),
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'key' }
+      );
+      if (error) throw error;
+      setBroadcastMessage(
+        broadcastInput.trim()
+          ? 'Broadcast published to the Sea Freight page.'
+          : 'Broadcast cleared on the Sea Freight page.'
+      );
+    } catch (err: any) {
+      setBroadcastError(err?.message || 'Failed to publish Sea Freight broadcast.');
+    } finally {
+      setSavingBroadcast(false);
+    }
   };
 
   const verifyKmId = async () => {
@@ -316,6 +411,93 @@ export default function AdminSeaFreight() {
             Log Out
           </button>
         </div>
+      </div>
+
+      <div className="p-5 bg-slate-900/90 rounded-2xl border border-amber-500/40 shadow-xl space-y-4">
+        <div>
+          <h2 className="text-sm font-bold text-amber-200 uppercase tracking-wider">
+            Sea Freight Rate
+          </h2>
+          <p className="text-xs text-purple-300/80 mt-1">
+            Published Sea Freight rate per CBM in NGN. Users can view this rate but cannot edit it.
+            Saving the rate does not broadcast a message and does not change existing shipment
+            snapshots.
+          </p>
+        </div>
+        <div>
+          <label className="block text-[11px] font-bold text-amber-100/90 mb-1">
+            Rate per CBM (NGN)
+          </label>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={seaFreightFeeInput}
+            onChange={(e) => setSeaFreightFeeInput(e.target.value)}
+            placeholder="e.g. 120000"
+            className="w-full p-2.5 rounded-xl bg-slate-800 text-white border border-amber-500/40 focus:outline-none focus:border-amber-300 text-sm"
+          />
+        </div>
+        {rateError ? (
+          <p className="text-xs text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-xl px-3 py-2">
+            {rateError}
+          </p>
+        ) : null}
+        {rateMessage ? (
+          <p className="text-xs text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 rounded-xl px-3 py-2">
+            {rateMessage}
+          </p>
+        ) : null}
+        <button
+          type="button"
+          onClick={() => void saveSeaFreightRate()}
+          disabled={savingRate}
+          className="bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white px-4 py-2.5 rounded-xl text-xs font-bold"
+        >
+          {savingRate ? 'Saving...' : 'Save Sea Freight Rate'}
+        </button>
+      </div>
+
+      <div className="p-5 bg-slate-900/90 rounded-2xl border border-sky-500/40 shadow-xl space-y-4">
+        <div>
+          <h2 className="text-sm font-bold text-sky-200 uppercase tracking-wider">
+            Sea Freight Broadcast
+          </h2>
+          <p className="text-xs text-purple-300/80 mt-1">
+            Publish an announcement to the user Sea Freight page. This is separate from saving the
+            rate.
+          </p>
+        </div>
+        <div>
+          <label className="block text-[11px] font-bold text-sky-100/90 mb-1">
+            Broadcast message
+          </label>
+          <textarea
+            value={broadcastInput}
+            onChange={(e) => setBroadcastInput(e.target.value)}
+            rows={4}
+            placeholder="Message shown to all Sea Freight users"
+            className="w-full p-2.5 rounded-xl bg-slate-800 text-white border border-sky-500/40 focus:outline-none focus:border-sky-300 text-sm resize-y min-h-[96px]"
+          />
+        </div>
+        {broadcastError ? (
+          <p className="text-xs text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-xl px-3 py-2">
+            {broadcastError}
+          </p>
+        ) : null}
+        {broadcastMessage ? (
+          <p className="text-xs text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 rounded-xl px-3 py-2">
+            {broadcastMessage}
+          </p>
+        ) : null}
+        <button
+          type="button"
+          onClick={() => void publishSeaBroadcast()}
+          disabled={savingBroadcast}
+          className="bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white px-4 py-2.5 rounded-xl text-xs font-bold"
+        >
+          {savingBroadcast ? 'Publishing...' : 'Publish Broadcast'}
+        </button>
       </div>
 
       <div className="p-5 bg-slate-900/90 rounded-2xl border border-cyan-500/40 shadow-xl space-y-2">

@@ -131,6 +131,7 @@ export default function SeaFreightPlaceholder() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [copiedChinaAddress, setCopiedChinaAddress] = useState(false);
   const [seaFreightFee, setSeaFreightFee] = useState<string | null>(null);
+  const [seaFreightNotice, setSeaFreightNotice] = useState<string | null>(null);
   const [packingInstructions, setPackingInstructions] = useState('');
   const [shipments, setShipments] = useState<LogisticsShipment[]>([]);
   const [shipmentGoodsById, setShipmentGoodsById] = useState<Record<string, ShipmentGood[]>>({});
@@ -154,16 +155,20 @@ export default function SeaFreightPlaceholder() {
       try {
         const [{ data: warehouseRows }, { data: settingsRows }] = await Promise.all([
           supabase.from('warehouses').select('*').eq('is_active', true),
-          supabase.from('site_settings').select('key, value').eq('key', 'sea_freight_fee').maybeSingle(),
+          supabase
+            .from('site_settings')
+            .select('key, value')
+            .in('key', ['sea_freight_fee', 'sea_freight_notice']),
         ]);
 
         if (cancelled) return;
 
-        if (settingsRows?.value?.trim()) {
-          setSeaFreightFee(settingsRows.value.trim());
-        } else {
-          setSeaFreightFee(null);
-        }
+        const settingsMap: Record<string, string> = {};
+        (settingsRows || []).forEach((row: { key: string; value: string }) => {
+          settingsMap[row.key] = row.value ?? '';
+        });
+        setSeaFreightFee(settingsMap.sea_freight_fee?.trim() || null);
+        setSeaFreightNotice(settingsMap.sea_freight_notice?.trim() || null);
 
         const nextWarehouseById = new Map<string, Warehouse>();
         const warehouses = (warehouseRows || []).map((row) => {
@@ -611,26 +616,26 @@ export default function SeaFreightPlaceholder() {
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="max-w-4xl mx-auto p-4 space-y-6 pb-72">
-        <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm">
-          <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
-            Logistics
-          </p>
-          <h1 className="text-lg font-extrabold text-gray-900 mt-0.5">Sea Freight</h1>
-          <p className="text-xs text-gray-500 mt-0.5 max-w-xl leading-relaxed">
-            Sea goods are received at the Sea China Warehouse (CN-SEA). Select items and request
-            packing to a Nigeria pickup warehouse. Measurement is CBM.
-          </p>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl border border-amber-200 shadow-sm space-y-3">
+        <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm space-y-4">
+          <h1 className="text-lg font-extrabold text-gray-900 tracking-tight">Sea Freight</h1>
           <div>
             <p className="text-[10px] font-bold uppercase tracking-wide text-amber-700">
-              Current Sea Freight fee (per CBM)
+              Current Rate
             </p>
             <p className="text-2xl sm:text-3xl font-extrabold text-[#0F172A] mt-1 tracking-tight">
-              {seaFreightFee ? `₦${seaFreightFee}` : 'Not published yet'}
+              {seaFreightFee ? `₦${seaFreightFee} / CBM` : 'Not published yet'}
             </p>
           </div>
+          {seaFreightNotice ? (
+            <div className="pt-4 border-t border-gray-100">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-sky-700">
+                Sea Freight Update
+              </p>
+              <p className="text-sm text-gray-800 mt-1.5 whitespace-pre-line leading-relaxed">
+                {seaFreightNotice}
+              </p>
+            </div>
+          ) : null}
         </div>
 
         <div className="bg-white p-5 rounded-2xl border border-emerald-200 shadow-sm space-y-3">
