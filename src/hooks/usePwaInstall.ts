@@ -114,9 +114,10 @@ export function usePwaInstall() {
   }, [])
 
   const promptInstall = useCallback(async () => runNativePrompt(), [])
+  const expectsNativePrompt = fallbackKind === 'generic'
 
   return {
-    visible: !installed,
+    visible: !installed && (Boolean(nativeEvent) || !expectsNativePrompt),
     canNativeInstall: Boolean(nativeEvent),
     fallbackKind,
     promptInstall,
