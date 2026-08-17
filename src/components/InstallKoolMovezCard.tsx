@@ -1,21 +1,4 @@
-import { usePwaInstall, type PwaFallbackKind } from '../hooks/usePwaInstall'
-
-function fallbackCopy(kind: PwaFallbackKind) {
-  switch (kind) {
-    case 'ios-safari':
-      return 'On iPhone or iPad: tap Share, then Add to Home Screen.'
-    case 'ios-other':
-      return 'On iPhone or iPad, open KoolMovez in Safari, tap Share, then Add to Home Screen.'
-    case 'firefox-android':
-      return 'In Firefox: open the menu, then tap Install or Add to Home screen.'
-    case 'samsung':
-      return 'In Samsung Internet: open the menu, then Add page to → Home screen.'
-    case 'desktop-safari':
-      return 'In Safari: use File → Add to Dock, or Share → Add to Dock.'
-    default:
-      return 'Use your browser menu to add KoolMovez to your home screen or apps list.'
-  }
-}
+import { pwaFallbackCopy, usePwaInstall } from '../hooks/usePwaInstall'
 
 export default function InstallKoolMovezCard() {
   const { visible, canNativeInstall, fallbackKind, promptInstall } = usePwaInstall()
@@ -30,7 +13,7 @@ export default function InstallKoolMovezCard() {
           Get quicker access to Exchange, Air Freight and Sea Freight.
         </p>
         {!canNativeInstall ? (
-          <p className="text-xs text-slate-600 mt-2 leading-relaxed">{fallbackCopy(fallbackKind)}</p>
+          <p className="text-xs text-slate-600 mt-2 leading-relaxed">{pwaFallbackCopy(fallbackKind)}</p>
         ) : null}
       </div>
       {canNativeInstall ? (

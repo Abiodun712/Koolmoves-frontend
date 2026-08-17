@@ -8,6 +8,23 @@ export type PwaFallbackKind =
   | 'desktop-safari'
   | 'generic'
 
+export function pwaFallbackCopy(kind: PwaFallbackKind) {
+  switch (kind) {
+    case 'ios-safari':
+      return 'On iPhone or iPad: tap Share, then Add to Home Screen.'
+    case 'ios-other':
+      return 'On iPhone or iPad, open KoolMovez in Safari, tap Share, then Add to Home Screen.'
+    case 'firefox-android':
+      return 'In Firefox: open the menu, then tap Install or Add to Home screen.'
+    case 'samsung':
+      return 'In Samsung Internet: open the menu, then Add page to → Home screen.'
+    case 'desktop-safari':
+      return 'In Safari: use File → Add to Dock, or Share → Add to Dock.'
+    default:
+      return 'Use your browser menu to add KoolMovez to your home screen or apps list.'
+  }
+}
+
 function detectInstalled() {
   if (typeof window === 'undefined') return false
   const nav = window.navigator as Navigator & { standalone?: boolean }
@@ -36,43 +53,66 @@ function detectFallbackKind(): PwaFallbackKind {
   return 'generic'
 }
 
+type Listener = () => void
+const listeners = new Set<Listener>()
+let capturedPrompt: BeforeInstallPromptEvent | null = null
+let globalInstalled = false
+let started = false
+
+function emit() {
+  listeners.forEach((listener) => listener())
+}
+
+function startGlobalListeners() {
+  if (started || typeof window === 'undefined') return
+  started = true
+  globalInstalled = detectInstalled()
+
+  window.addEventListener('beforeinstallprompt', (event) => {
+    event.preventDefault()
+    capturedPrompt = event as BeforeInstallPromptEvent
+    emit()
+  })
+  window.addEventListener('appinstalled', () => {
+    capturedPrompt = null
+    globalInstalled = true
+    emit()
+  })
+  window.matchMedia('(display-mode: standalone)').addEventListener('change', () => {
+    globalInstalled = detectInstalled()
+    emit()
+  })
+}
+
 export function usePwaInstall() {
   const [installed, setInstalled] = useState(detectInstalled)
   const [nativeEvent, setNativeEvent] = useState<BeforeInstallPromptEvent | null>(null)
   const [fallbackKind, setFallbackKind] = useState<PwaFallbackKind>('generic')
 
   useEffect(() => {
-    setInstalled(detectInstalled())
+    startGlobalListeners()
     setFallbackKind(detectFallbackKind())
-
-    const onBeforeInstall = (event: Event) => {
-      event.preventDefault()
-      setNativeEvent(event as BeforeInstallPromptEvent)
+    setInstalled(globalInstalled || detectInstalled())
+    setNativeEvent(capturedPrompt)
+    const onChange = () => {
+      setInstalled(globalInstalled || detectInstalled())
+      setNativeEvent(capturedPrompt)
     }
-    const onInstalled = () => {
-      setNativeEvent(null)
-      setInstalled(true)
-    }
-    const media = window.matchMedia('(display-mode: standalone)')
-    const onDisplayMode = () => setInstalled(detectInstalled())
-
-    window.addEventListener('beforeinstallprompt', onBeforeInstall)
-    window.addEventListener('appinstalled', onInstalled)
-    media.addEventListener('change', onDisplayMode)
+    listeners.add(onChange)
     return () => {
-      window.removeEventListener('beforeinstallprompt', onBeforeInstall)
-      window.removeEventListener('appinstalled', onInstalled)
-      media.removeEventListener('change', onDisplayMode)
+      listeners.delete(onChange)
     }
   }, [])
 
   const promptInstall = useCallback(async () => {
-    if (!nativeEvent) return
-    await nativeEvent.prompt()
-    const { outcome } = await nativeEvent.userChoice
-    setNativeEvent(null)
-    if (outcome === 'accepted') setInstalled(true)
-  }, [nativeEvent])
+    if (!capturedPrompt) return
+    const event = capturedPrompt
+    await event.prompt()
+    const { outcome } = await event.userChoice
+    capturedPrompt = null
+    if (outcome === 'accepted') globalInstalled = true
+    emit()
+  }, [])
 
   return {
     visible: !installed,

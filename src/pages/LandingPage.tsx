@@ -15,6 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
+import { InstallKoolMovezButton } from '../components/InstallKoolMovezButton';
 
 const navLinks = [
   { href: '/', label: 'Home' },
@@ -148,6 +149,9 @@ export default function LandingPage() {
                 Get Started
               </Link>
             </div>
+            <div className="pt-2">
+              <InstallKoolMovezButton variant="menu" />
+            </div>
           </div>
         ) : null}
       </header>
@@ -166,17 +170,18 @@ export default function LandingPage() {
               <p className="mt-5 text-base sm:text-lg text-slate-600 max-w-xl leading-relaxed">
                 Exchange Naira for RMB, move your goods from China to Nigeria by Air or Sea, on KoolMovez platform — in a Kool movez.
               </p>
-              <div className="mt-8 flex flex-col sm:flex-row gap-3">
+              <div className="mt-8 flex flex-col sm:flex-row sm:flex-wrap gap-3 w-full min-w-0">
                 <Link
                   to="/signup"
-                  className="inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-6 py-3.5 rounded-xl transition-colors"
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-6 py-3.5 rounded-xl transition-colors"
                 >
                   Get Started
                   <ArrowRight size={16} />
                 </Link>
+                <InstallKoolMovezButton variant="hero" />
                 <a
                   href="#services"
-                  className="inline-flex items-center justify-center bg-white border border-slate-200 hover:bg-slate-50 text-[#0F172A] font-bold px-6 py-3.5 rounded-xl transition-colors"
+                  className="w-full sm:w-auto inline-flex items-center justify-center bg-white border border-slate-200 hover:bg-slate-50 text-[#0F172A] font-bold px-6 py-3.5 rounded-xl transition-colors"
                 >
                   Explore Services
                 </a>
@@ -616,19 +621,20 @@ export default function LandingPage() {
           <p className="mt-3 text-sm sm:text-base text-slate-300">
             Create your KoolMovez account and start your China-to-Nigeria journey.
           </p>
-          <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center max-w-sm sm:max-w-none mx-auto">
+          <div className="mt-8 flex flex-col sm:flex-row sm:flex-wrap gap-3 justify-center max-w-sm sm:max-w-none mx-auto w-full min-w-0">
             <Link
               to="/signup"
-              className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-7 py-3.5 rounded-xl transition-colors"
+              className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-7 py-3.5 rounded-xl transition-colors"
             >
               Create Account
             </Link>
             <Link
               to="/login"
-              className="border border-slate-600 hover:bg-slate-800 text-white font-bold px-7 py-3.5 rounded-xl transition-colors"
+              className="w-full sm:w-auto border border-slate-600 hover:bg-slate-800 text-white font-bold px-7 py-3.5 rounded-xl transition-colors"
             >
               Login
             </Link>
+            <InstallKoolMovezButton variant="footer" />
           </div>
         </div>
       </section>
