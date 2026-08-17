@@ -14,12 +14,10 @@ const variantClass: Record<InstallButtonVariant, string> = {
 
 export function InstallKoolMovezButton({
   variant,
-  onActivate,
 }: {
   variant: InstallButtonVariant
-  onActivate?: () => void
 }) {
-  const { visible, canNativeInstall, fallbackKind, promptInstall } = usePwaInstall()
+  const { visible, fallbackKind, promptInstall } = usePwaInstall()
   const [showHint, setShowHint] = useState(false)
 
   if (!visible) return null
@@ -29,18 +27,15 @@ export function InstallKoolMovezButton({
       <button
         type="button"
         onClick={() => {
-          onActivate?.()
-          if (canNativeInstall) {
-            void promptInstall()
-            return
-          }
-          setShowHint(true)
+          void promptInstall().then((usedNative) => {
+            if (!usedNative) setShowHint(true)
+          })
         }}
         className={variantClass[variant]}
       >
         Install KoolMovez
       </button>
-      {showHint && !canNativeInstall ? (
+      {showHint ? (
         <p
           className={`mt-2 text-xs leading-relaxed ${
             variant === 'footer' ? 'text-slate-300' : 'text-slate-600'

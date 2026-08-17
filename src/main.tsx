@@ -5,7 +5,9 @@ import { registerSW } from 'virtual:pwa-register'
 import './index.css'
 import App from './App.tsx'
 import { AuthProvider } from './contexts/AuthContext'
+import { capturePwaInstallPrompt } from './hooks/usePwaInstall'
 
+capturePwaInstallPrompt()
 registerSW({ immediate: true })
 
 createRoot(document.getElementById('root')!).render(

@@ -13,7 +13,7 @@ export function pwaFallbackCopy(kind: PwaFallbackKind) {
     case 'ios-safari':
       return 'On iPhone or iPad: tap Share, then Add to Home Screen.'
     case 'ios-other':
-      return 'On iPhone or iPad, open KoolMovez in Safari, tap Share, then Add to Home Screen.'
+      return 'On iPhone or iPad: tap Share, then Add to Home Screen.'
     case 'firefox-android':
       return 'In Firefox: open the menu, then tap Install or Add to Home screen.'
     case 'samsung':
@@ -21,7 +21,7 @@ export function pwaFallbackCopy(kind: PwaFallbackKind) {
     case 'desktop-safari':
       return 'In Safari: use File → Add to Dock, or Share → Add to Dock.'
     default:
-      return 'Use your browser menu to add KoolMovez to your home screen or apps list.'
+      return 'Use your browser menu to Add to Home Screen.'
   }
 }
 
@@ -63,7 +63,7 @@ function emit() {
   listeners.forEach((listener) => listener())
 }
 
-function startGlobalListeners() {
+export function capturePwaInstallPrompt() {
   if (started || typeof window === 'undefined') return
   started = true
   globalInstalled = detectInstalled()
@@ -84,13 +84,24 @@ function startGlobalListeners() {
   })
 }
 
+async function runNativePrompt() {
+  const event = capturedPrompt
+  if (!event) return false
+  await event.prompt()
+  const { outcome } = await event.userChoice
+  capturedPrompt = null
+  if (outcome === 'accepted') globalInstalled = true
+  emit()
+  return true
+}
+
 export function usePwaInstall() {
   const [installed, setInstalled] = useState(detectInstalled)
   const [nativeEvent, setNativeEvent] = useState<BeforeInstallPromptEvent | null>(null)
   const [fallbackKind, setFallbackKind] = useState<PwaFallbackKind>('generic')
 
   useEffect(() => {
-    startGlobalListeners()
+    capturePwaInstallPrompt()
     setFallbackKind(detectFallbackKind())
     setInstalled(globalInstalled || detectInstalled())
     setNativeEvent(capturedPrompt)
@@ -104,15 +115,7 @@ export function usePwaInstall() {
     }
   }, [])
 
-  const promptInstall = useCallback(async () => {
-    if (!capturedPrompt) return
-    const event = capturedPrompt
-    await event.prompt()
-    const { outcome } = await event.userChoice
-    capturedPrompt = null
-    if (outcome === 'accepted') globalInstalled = true
-    emit()
-  }, [])
+  const promptInstall = useCallback(async () => runNativePrompt(), [])
 
   return {
     visible: !installed,

@@ -1,7 +1,9 @@
+import { useState } from 'react'
 import { pwaFallbackCopy, usePwaInstall } from '../hooks/usePwaInstall'
 
 export default function InstallKoolMovezCard() {
-  const { visible, canNativeInstall, fallbackKind, promptInstall } = usePwaInstall()
+  const { visible, fallbackKind, promptInstall } = usePwaInstall()
+  const [showHint, setShowHint] = useState(false)
 
   if (!visible) return null
 
@@ -12,19 +14,21 @@ export default function InstallKoolMovezCard() {
         <p className="text-xs text-gray-500 mt-0.5">
           Get quicker access to Exchange, Air Freight and Sea Freight.
         </p>
-        {!canNativeInstall ? (
+        {showHint ? (
           <p className="text-xs text-slate-600 mt-2 leading-relaxed">{pwaFallbackCopy(fallbackKind)}</p>
         ) : null}
       </div>
-      {canNativeInstall ? (
-        <button
-          type="button"
-          onClick={() => void promptInstall()}
-          className="shrink-0 w-full sm:w-auto text-center min-h-[44px] inline-flex items-center justify-center px-4 rounded-xl bg-[#0F172A] hover:bg-slate-800 text-white text-xs font-bold"
-        >
-          Install KoolMovez
-        </button>
-      ) : null}
+      <button
+        type="button"
+        onClick={() => {
+          void promptInstall().then((usedNative) => {
+            if (!usedNative) setShowHint(true)
+          })
+        }}
+        className="shrink-0 w-full sm:w-auto text-center min-h-[44px] inline-flex items-center justify-center px-4 rounded-xl bg-[#0F172A] hover:bg-slate-800 text-white text-xs font-bold"
+      >
+        Install KoolMovez
+      </button>
     </section>
   )
 }
