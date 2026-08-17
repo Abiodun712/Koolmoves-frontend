@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabaseClient';
+import InstallKoolMovezCard from '../components/InstallKoolMovezCard';
 import {
   airShipmentStatusLabel,
   normalizeLogisticsShipment,
@@ -295,6 +296,8 @@ export default function HomeDashboard() {
           </div>
         </div>
       </section>
+
+      <InstallKoolMovezCard />
 
       <section className="space-y-3">
         <div>
