@@ -69,7 +69,10 @@ export default function UserAppNav() {
 
           <nav className="hidden md:grid grid-cols-4 gap-1.5" aria-label="KoolMovez services">
             {NAV_ITEMS.map((item) => {
-              const active = pathname === item.to;
+              const active =
+                item.to === '/home'
+                  ? pathname === '/home' || pathname === '/profile' || pathname === '/support'
+                  : pathname === item.to;
               const Icon = item.icon;
               return (
                 <Link
@@ -94,7 +97,10 @@ export default function UserAppNav() {
       >
         <div className="grid grid-cols-4 max-w-4xl mx-auto">
           {NAV_ITEMS.map((item) => {
-            const active = pathname === item.to;
+            const active =
+              item.to === '/home'
+                ? pathname === '/home' || pathname === '/profile' || pathname === '/support'
+                : pathname === item.to;
             const Icon = item.icon;
             return (
               <Link

@@ -38,10 +38,6 @@ const [userProfile, setUserProfile] = useState<any>(null);
   const [myRequests, setMyRequests] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState<boolean>(false);
 
-  const [messages, setMessages] = useState<any[]>([
-    { sender: 'support', text: 'Hello! Welcome to KoolMovez support. How can we help you with your exchange today?', time: 'Just now' }
-  ]);
-  const [newMessage, setNewMessage] = useState<string>('');
   const exchangeRate = systemStatus.exchange_rate; 
 
   useEffect(() => {
@@ -303,29 +299,13 @@ const [userProfile, setUserProfile] = useState<any>(null);
     }
   };
 
-  const handleSendMessage = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newMessage.trim()) return;
-
-    const userMsg = { sender: 'user', text: newMessage.trim(), time: 'Just now' };
-    setMessages(prev => [...prev, userMsg]);
-    setNewMessage('');
-
-    setTimeout(() => {
-      setMessages(prev => [
-        ...prev, 
-        { sender: 'support', text: 'Thank you for reaching out. An admin agent is reviewing your message and will update you shortly.', time: 'Just now' }
-      ]);
-    }, 1000);
-  };
-
   return (
     <div className="max-w-4xl mx-auto p-4 space-y-6">
       {/* HEADER & TOP BAR */}
       <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h2 className="text-lg font-extrabold text-gray-900">Exchange</h2>
-          <p className="text-xs text-gray-500 mt-0.5">Manage your currency exchange, profile, and support messages.</p>
+          <p className="text-xs text-gray-500 mt-0.5">Submit, pay, and track Naira to RMB exchange requests.</p>
         </div>
         <div className="flex items-center gap-2">
   <div className="bg-gray-900 text-white px-3 py-1.5 rounded-xl text-xs font-bold">
@@ -389,30 +369,6 @@ const [userProfile, setUserProfile] = useState<any>(null);
           }`}
         >
           <span> </span> My Requests ({myRequests.length})
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setCurrentView('profile')}
-          className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
-            currentView === 'profile' 
-              ? 'bg-[#10B981] text-white shadow-sm' 
-              : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
-          }`}
-        >
-          <span> </span> Profile
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setCurrentView('chat')}
-          className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
-            currentView === 'chat' 
-              ? 'bg-[#10B981] text-white shadow-sm' 
-              : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
-          }`}
-        >
-          <span> </span> Chat / Support
         </button>
       </div>
 
@@ -710,88 +666,6 @@ const [userProfile, setUserProfile] = useState<any>(null);
               ))}
             </div>
           )}
-        </div>
-      )}
-
-      {/* VIEW 3: PROFILE */}
-      {currentView === 'profile' && (
-        <div className="p-5 bg-white rounded-2xl border border-[#E5E7EB] shadow-sm space-y-5">
-          <div>
-            <h3 className="text-sm font-bold text-[#0F172A] flex items-center gap-2">
-              <span> </span> User Profile Information
-            </h3>
-            <p className="text-xs text-gray-600 mt-0.5">Review your account details and identification credentials.</p>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="p-4 bg-[#F8FAFC] rounded-xl border border-gray-200 space-y-1">
-              <label className="text-[10px] uppercase font-bold text-gray-400">User ID</label>
-              <p className="text-xs font-mono font-bold text-gray-900">{userKmid || 'Loading...'}</p>
-            </div>
-
-            <div className="p-4 bg-[#F8FAFC] rounded-xl border border-gray-200 space-y-1">
-              <label className="text-[10px] uppercase font-bold text-gray-400">Account Status</label>
-              <p className="text-xs font-bold text-emerald-600 flex items-center gap-1">
-                <span> </span> Active & Verified
-              </p>
-            </div>
-
-            <div className="p-4 bg-[#F8FAFC] rounded-xl border border-gray-200 space-y-1">
-              <label className="text-[10px] uppercase font-bold text-gray-400">Default Exchange Rate</label>
-              <p className="text-xs font-bold text-gray-900">1 RMB = ₦{exchangeRate}</p>
-            </div>
-
-            <div className="p-4 bg-[#F8FAFC] rounded-xl border border-gray-200 space-y-1">
-              <label className="text-[10px] uppercase font-bold text-gray-400">Total Requests Made</label>
-              <p className="text-xs font-bold text-gray-900">{myRequests.length} Transactions</p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* VIEW 4: CHAT / MESSAGING */}
-      {currentView === 'chat' && (
-        <div className="p-5 bg-white rounded-2xl border border-[#E5E7EB] shadow-sm space-y-4">
-          <div>
-            <h3 className="text-sm font-bold text-[#0F172A] flex items-center gap-2">
-              <span> </span> Live Support & Messaging
-            </h3>
-            <p className="text-xs text-gray-600 mt-0.5">Chat directly with the Koolswitch support team regarding your transactions.</p>
-          </div>
-
-          {/* Chat Messages Box */}
-          <div className="h-72 overflow-y-auto p-4 bg-[#F8FAFC] rounded-2xl border border-gray-200 space-y-3 flex flex-col">
-            {messages.map((msg, index) => (
-              <div 
-                key={index} 
-                className={`max-w-[80%] p-3 rounded-xl text-xs space-y-1 ${
-                  msg.sender === 'user' 
-                    ? 'ml-auto bg-[#10B981] text-white rounded-br-none' 
-                    : 'mr-auto bg-white border border-gray-200 text-gray-800 rounded-bl-none shadow-xs'
-                }`}
-              >
-                <p className="font-semibold">{msg.text}</p>
-                <p className={`text-[9px] text-right ${msg.sender === 'user' ? 'text-emerald-100' : 'text-gray-400'}`}>{msg.time}</p>
-              </div>
-            ))}
-          </div>
-
-          {/* Chat Input Form */}
-          <form onSubmit={handleSendMessage} className="flex gap-2">
-            <input 
-              type="text"
-              placeholder="Type your message to support..."
-              value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
-              className="flex-1 p-3 bg-white border border-gray-200 rounded-xl text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#10B981]"
-            />
-            <button 
-              type="submit"
-              className="px-5 py-3 bg-[#10B981] hover:bg-[#059669] text-white rounded-xl text-xs font-bold shadow-sm transition-all"
-            >
-              Send 
-            </button>
-          </form>
         </div>
       )}
     </div>
