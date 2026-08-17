@@ -37,7 +37,7 @@ export function InstallKoolMovezButton({
       </button>
       {showHint ? (
         <p
-          className={`mt-2 text-xs leading-relaxed ${
+          className={`mt-2 text-xs ${
             variant === 'footer' ? 'text-slate-300' : 'text-slate-600'
           }`}
         >

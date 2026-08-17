@@ -11,17 +11,15 @@ export type PwaFallbackKind =
 export function pwaFallbackCopy(kind: PwaFallbackKind) {
   switch (kind) {
     case 'ios-safari':
-      return 'On iPhone or iPad: tap Share, then Add to Home Screen.'
     case 'ios-other':
-      return 'On iPhone or iPad: tap Share, then Add to Home Screen.'
+      return 'Tap Share, then Add to Home Screen.'
     case 'firefox-android':
-      return 'In Firefox: open the menu, then tap Install or Add to Home screen.'
     case 'samsung':
-      return 'In Samsung Internet: open the menu, then Add page to → Home screen.'
+      return 'Open the menu, then Add to Home Screen.'
     case 'desktop-safari':
-      return 'In Safari: use File → Add to Dock, or Share → Add to Dock.'
+      return 'Use Share, then Add to Dock.'
     default:
-      return 'Use your browser menu to Add to Home Screen.'
+      return 'Use the browser menu to Add to Home Screen.'
   }
 }
 
