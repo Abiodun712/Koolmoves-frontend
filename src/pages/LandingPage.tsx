@@ -14,8 +14,8 @@ import {
   Shuffle,
   X,
 } from 'lucide-react';
-import { supabase } from '../lib/supabaseClient';
 import { InstallKoolMovezButton } from '../components/InstallKoolMovezButton';
+import RmbExchangeCalculator from '../components/RmbExchangeCalculator';
 
 const navLinks = [
   { href: '/', label: 'Home' },
@@ -47,24 +47,6 @@ function BrandMark({ light = false }: { light?: boolean }) {
 
 export default function LandingPage() {
   const [menuOpen, setMenuOpen] = useState(false);
-  const [exchangeRate, setExchangeRate] = useState<number | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    supabase
-      .from('site_settings')
-      .select('value')
-      .eq('key', 'exchange_rate')
-      .maybeSingle()
-      .then(({ data }) => {
-        if (cancelled || !data?.value) return;
-        const parsed = parseFloat(data.value);
-        if (Number.isFinite(parsed) && parsed > 0) setExchangeRate(parsed);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -194,36 +176,7 @@ export default function LandingPage() {
             <div className="relative">
               <div className="absolute -inset-4 bg-emerald-500/10 blur-3xl rounded-full" />
               <div className="relative space-y-4">
-                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xl shadow-slate-900/5">
-                  <div className="flex items-center justify-between mb-4">
-                    <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
-                      RMB Exchange
-                    </p>
-                    <span className="text-[10px] font-bold px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700">
-                      NGN → RMB
-                    </span>
-                  </div>
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between rounded-xl bg-slate-50 border border-slate-100 px-4 py-3">
-                      <span className="text-xs font-semibold text-slate-500">You send</span>
-                      <span className="text-lg font-extrabold text-[#0F172A]">₦100,000</span>
-                    </div>
-                    <div className="flex justify-center">
-                      <span className="w-8 h-8 rounded-full bg-[#0F172A] text-white flex items-center justify-center">
-                        <ArrowDown size={14} />
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between rounded-xl bg-emerald-50 border border-emerald-100 px-4 py-3">
-                      <span className="text-xs font-semibold text-emerald-800">You receive</span>
-                      <span className="text-lg font-extrabold text-[#0F172A]">RMB</span>
-                    </div>
-                  </div>
-                  <p className="mt-3 text-[11px] text-slate-400">
-                    {exchangeRate
-                      ? `Published rate: ₦${exchangeRate.toLocaleString()} / RMB`
-                      : 'Published rate shown in your account after you sign in.'}
-                  </p>
-                </div>
+                <RmbExchangeCalculator />
 
                 <div className="bg-[#0F172A] text-white border border-slate-800 rounded-2xl p-5 shadow-xl">
                   <div className="flex items-center justify-between mb-4">
