@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { validateNewPassword } from '../lib/passwordPolicy';
 import { supabase } from '../lib/supabaseClient';
 
 type Step = 'signup' | 'otp';
@@ -329,13 +330,9 @@ export default function Signup() {
       return;
     }
 
-    if (password.length < 6) {
-      setErrorMsg('Password must be at least 6 characters long.');
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      setErrorMsg('Passwords do not match.');
+    const passwordError = validateNewPassword(password, confirmPassword);
+    if (passwordError) {
+      setErrorMsg(passwordError);
       return;
     }
 

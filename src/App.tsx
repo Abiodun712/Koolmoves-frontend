@@ -2,6 +2,8 @@ import { Routes, Route } from "react-router-dom";
 import OfflineBanner from "./components/OfflineBanner";
 import LandingPage from "./pages/LandingPage";
 import Login from "./pages/Login";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 import Signup from "./pages/Signup";
 import HomeDashboard from "./pages/HomeDashboard";
 import Profile from "./pages/Profile";
@@ -15,14 +17,19 @@ import AdminShippingRequests from "./components/AdminShippingRequests";
 import UserDashboard from "./components/UserDashboard";
 import { UserAppLayout } from "./components/UserAppNav";
 import { RequireAuth, RequireAdmin } from "./components/RouteGuards";
+import { RecoveryGate } from "./components/RecoveryGate";
 
 export default function App() {
   return (
     <>
       <OfflineBanner />
+      <RecoveryGate />
       <Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<Login />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
+      <Route path="/auth/confirm" element={<ResetPassword />} />
       <Route path="/signup" element={<Signup />} />
 
       <Route
