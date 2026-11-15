@@ -7,6 +7,7 @@ import {
   normalizeWarehouse,
   type Warehouse,
 } from '../types/warehouse';
+import { AdminNotificationBell } from './AdminNotifications';
 import AdminSeaShipments from './AdminSeaShipments';
 import { parseNonNegativeFeeInput, storedFeeToInput } from '../lib/logisticsSettings';
 
@@ -385,6 +386,7 @@ export default function AdminSeaFreight() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <AdminNotificationBell />
           <Link
             to="/admin/air-freight"
             className="bg-cyan-800/65 hover:bg-cyan-700 text-cyan-100 px-4 py-2 rounded-xl text-xs font-semibold transition-all border border-cyan-500/30 shadow"
