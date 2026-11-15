@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {useAuth } from '../contexts/AuthContext';
+import { AdminNotificationBell, AdminNotificationList } from './AdminNotifications';
 export default function AdminDashboard() {
     const [requests, setRequests] = useState<any[]>([]);
     const [loading, setLoading] = useState<boolean>(true);
@@ -20,6 +21,8 @@ const [rejectRequest, setRejectRequest] = useState<any>(null);
     const [adminNote, setAdminNote] = useState('');
     const [selectedRequest, setSelectedRequest] = useState<any | null>(null);
 const navigate = useNavigate();
+const [searchParams] = useSearchParams();
+const [trackedNoticeRef, setTrackedNoticeRef] = useState<string | null>(null);
 const { logout } = useAuth();
 
 const handleLogout = async () => {
@@ -59,6 +62,11 @@ const handleLogout = async () => {
     useEffect(() => {
         fetchAdminData();
     }, []);
+    const noticeRef = searchParams.get('ref');
+    if (noticeRef && noticeRef !== trackedNoticeRef) {
+        setTrackedNoticeRef(noticeRef);
+        setSearchTerm(noticeRef);
+    }
     const fetchAdminData = async () => {
         setLoading(true);
 
@@ -94,6 +102,13 @@ const handleLogout = async () => {
         }
 
         setLoading(false);
+    };
+    const refreshExchangeRequests = async () => {
+        const { data, error } = await supabase
+            .from('exchange_requests')
+            .select('*')
+            .order('created_at', { ascending: false });
+        if (!error && data) setRequests(data);
     };
 
     const handleTogglePlatformStatus = async (newStatus: string) => {
@@ -274,6 +289,7 @@ const handleLogout = async () => {
     >
         Sea Freight
     </Link>
+    <AdminNotificationBell />
     <button
         onClick={fetchAdminData}
         className="bg-purple-800/65 hover:bg-purple-700 text-cyan-200 px-4 py-2 rounded-xl text-xs font-semibold transition-all border border-purple-500/30 shadow"
@@ -288,6 +304,13 @@ const handleLogout = async () => {
     </button>
 </div>
             </div>
+
+            <AdminNotificationList
+                onArrival={() => {
+                    setFilterStatus('all');
+                    void refreshExchangeRequests();
+                }}
+            />
 
             {/* PLATFORM ONLINE / OFFLINE STATUS CONTROLLER BANNER */}
 
