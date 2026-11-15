@@ -105,6 +105,14 @@ export const Login: React.FC = () => {
               autoComplete="current-password"
               required
             />
+            <div className="mt-2 text-right">
+              <Link
+                to="/forgot-password"
+                className="text-sm font-semibold text-blue-600 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
+              >
+                Forgot password?
+              </Link>
+            </div>
           </div>
 
           {message && (
