@@ -1,0 +1,6 @@
+// Public project values already shipped in the browser client.
+// The service-role key is never placed here.
+export const PUBLIC_SUPABASE_URL = 'https://qslfgnrivaacfwsojjhh.supabase.co';
+
+export const PUBLIC_SUPABASE_ANON_KEY =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFzbGZnbnJpdmFhY2Z3c29qamhoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM5MDY4MTYsImV4cCI6MjA5OTQ4MjgxNn0.qQEN8AzTl-3xJ-lNx71FZXKV0VMcMCNYns7HUUDoyDo';
