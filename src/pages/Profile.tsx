@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import PasskeyManager from '../components/PasskeyManager';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function Profile() {
@@ -45,6 +46,7 @@ export default function Profile() {
           </div>
         </div>
       </div>
+      <PasskeyManager />
     </div>
   );
 }
