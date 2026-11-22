@@ -14,6 +14,7 @@ import AdminDashboard from "./components/AdminDashboard";
 import AdminAirFreight from "./components/AdminAirFreight";
 import AdminSeaFreight from "./components/AdminSeaFreight";
 import AdminShippingRequests from "./components/AdminShippingRequests";
+import AdminTelegram from "./components/AdminTelegram";
 import UserDashboard from "./components/UserDashboard";
 import { UserAppLayout } from "./components/UserAppNav";
 import { RequireAuth, RequireAdmin } from "./components/RouteGuards";
@@ -79,6 +80,15 @@ export default function App() {
         element={
           <RequireAdmin>
             <AdminShippingRequests />
+          </RequireAdmin>
+        }
+      />
+
+      <Route
+        path="/admin/telegram"
+        element={
+          <RequireAdmin>
+            <AdminTelegram />
           </RequireAdmin>
         }
       />
