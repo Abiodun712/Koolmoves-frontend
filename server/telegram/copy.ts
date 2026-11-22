@@ -70,6 +70,17 @@ export function exchangeAlert(siteUrl: string, reference: string, status: string
   ].join('\n');
 }
 
+export function supportAlert(siteUrl: string, reference: string, status: string): string {
+  const heading = status === 'open' ? 'New support request' : 'Support request';
+  return [
+    heading,
+    `Ref: ${reference}`,
+    'Type: support',
+    `Status: ${status}`,
+    `Admin: ${siteUrl}/admin/telegram`,
+  ].join('\n');
+}
+
 export function logisticsAlert(
   siteUrl: string,
   reference: string,

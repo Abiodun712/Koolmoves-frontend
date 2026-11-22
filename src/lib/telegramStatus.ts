@@ -1,4 +1,8 @@
-export function deliveryStatusLabel(status: string, lastError?: string | null): { label: string; delivered: boolean } {
+export function deliveryStatusLabel(
+  status: string,
+  lastError?: string | null,
+  attempts = 0,
+): { label: string; delivered: boolean } {
   if (status === 'sent' && lastError === 'marked_by_admin') {
     return {
       label: 'Marked delivered by an admin. No new Telegram call was made.',
@@ -9,9 +13,11 @@ export function deliveryStatusLabel(status: string, lastError?: string | null): 
     case 'sent':
       return { label: 'Delivered to Telegram', delivered: true };
     case 'queued':
-      return { label: 'Queued. Not delivered.', delivered: false };
+      return attempts > 0
+        ? { label: 'Retrying after the automatic send. Not delivered.', delivered: false }
+        : { label: 'Automatic send queued. Not delivered.', delivered: false };
     case 'sending':
-      return { label: 'Sending. Not delivered.', delivered: false };
+      return { label: 'Automatic send in progress. Not delivered.', delivered: false };
     case 'failed':
       return { label: 'Failed. Not delivered.', delivered: false };
     case 'needs_review':

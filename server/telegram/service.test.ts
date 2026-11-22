@@ -528,6 +528,104 @@ describe('telegram admin and delivery', () => {
   });
 });
 
+describe('automatic admin delivery', () => {
+  it('notifies the admin when a support ticket is committed and still accepts the customer if that send times out', async () => {
+    const { service, calls } = harness({
+      onSend: (call) =>
+        call.chatId === '10001'
+          ? { classification: 'unknown', messageId: null, code: 'telegram_timeout' }
+          : { classification: 'accepted', messageId: '1', code: null },
+    });
+    const opened = await service.webhook(webhook(callback(1, 555001, 'support')));
+    expect(opened.status).toBe(200);
+    expect(calls.some((call) => call.chatId === '555001' && call.text === SUPPORT_OPENED)).toBe(true);
+    const alert = calls.find((call) => call.chatId === '10001');
+    expect(alert?.text).toContain('Type: support');
+    expect(alert?.text).not.toContain('555001');
+    await service.webhook(webhook(privateMessage(2, 555001, 'private account 999')));
+    expect(calls.filter((call) => call.chatId === '10001').every((call) => !call.text.includes('private account'))).toBe(true);
+    const listed = asJson(await (await service.admin(admin({ op: 'list-alerts' }))).json());
+    expect(listed.alerts[0]).toMatchObject({ kind: 'support_request', status: 'needs_review', delivered: false });
+    const replay = await service.webhook(webhook(callback(1, 555001, 'support')));
+    expect((asJson(await replay.json())).duplicate).toBe(true);
+    expect(calls.filter((call) => call.chatId === '10001')).toHaveLength(1);
+  });
+
+  it('sends an exchange alert from the worker as soon as the committed outbox row exists, and a second call does not send it again', async () => {
+    const { service, store, records, calls, now } = harness();
+    records.set('exchange_request:KMX-111111', {
+      kind: 'exchange_request',
+      recordKey: 'KMX-111111',
+      status: 'pending',
+      freightType: null,
+    });
+    expect(await store.enqueueAlert({
+      dedupeKey: 'exchange:KMX-111111',
+      kind: 'exchange_request',
+      recordKey: 'KMX-111111',
+      now: now(),
+      notBefore: null,
+    })).toBe('created');
+    expect(await store.enqueueAlert({
+      dedupeKey: 'exchange:KMX-111111',
+      kind: 'exchange_request',
+      recordKey: 'KMX-111111',
+      now: now(),
+      notBefore: null,
+    })).toBe('exists');
+    const firstClaim = await store.claimAlert(now());
+    const secondClaim = await store.claimAlert(now());
+    expect(firstClaim?.status).toBe('sending');
+    expect(secondClaim).toBeNull();
+    await store.settleAlert(firstClaim!.id, {
+      status: 'queued',
+      lastError: null,
+      nextAttemptAt: null,
+      claimedAt: null,
+      telegramMessageId: null,
+      deliveredChatIds: [],
+    });
+    const sent = asJson(await (await service.worker(worker(WORKER))).json());
+    expect(sent.alerts[0]).toMatchObject({ status: 'sent', delivered: true, recordKey: 'KMX-111111' });
+    const again = asJson(await (await service.worker(new Request('https://koolmovez.com/api/telegram-worker', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${WORKER}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ text: 'send this instead', chat_id: '10001' }),
+    }))).json());
+    expect(again.alerts).toEqual([]);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].text).toContain('Type: exchange');
+    expect(calls[0].text).not.toContain('send this instead');
+  });
+
+  it('does not wait to notify a logistics request, and a thrown alert cannot fail the customer ack', async () => {
+    const { service, store, records, calls, now } = harness({
+      onSend: (call) => {
+        if (call.chatId === '10001') throw new Error('telegram down');
+        return { classification: 'accepted', messageId: '1', code: null };
+      },
+    });
+    records.set('logistics_request:44444444-4444-4444-8444-444444444444', {
+      kind: 'logistics_request',
+      recordKey: '44444444-4444-4444-8444-444444444444',
+      status: 'pending_packing',
+      freightType: 'sea',
+    });
+    await store.enqueueAlert({
+      dedupeKey: 'logistics:44444444-4444-4444-8444-444444444444',
+      kind: 'logistics_request',
+      recordKey: '44444444-4444-4444-8444-444444444444',
+      now: now(),
+      notBefore: null,
+    });
+    const sent = asJson(await (await service.worker(worker())).json());
+    expect(sent.alerts[0]).toMatchObject({ status: 'needs_review', delivered: false, lastError: 'telegram_network' });
+    const opened = await service.webhook(webhook(callback(7, 555001, 'support')));
+    expect(opened.status).toBe(200);
+    expect(calls.some((call) => call.text === SUPPORT_OPENED)).toBe(true);
+  });
+});
+
 describe('approved copy and source boundaries', () => {
   it('does not put the bot token or Telegram API in the browser client', () => {
     const client = readFileSync(new URL('../../src/lib/telegramAdminClient.ts', import.meta.url), 'utf8');

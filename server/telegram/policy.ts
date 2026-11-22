@@ -1,7 +1,9 @@
 export const MAX_DELIVERY_ATTEMPTS = 5;
 export const LEASE_MS = 120_000;
-export const LOGISTICS_ALERT_DELAY_MS = 120_000;
 export const PREVIEW_TTL_MS = 15 * 60_000;
+/** Database waits at most this long for the worker. Each Telegram call aborts sooner. */
+export const DISPATCH_WAIT_MS = 10_000;
+export const AUTOMATIC_ALERT_BATCH = 3;
 export const MAX_WEBHOOK_BYTES = 65_536;
 export const MAX_ADMIN_BYTES = 16_384;
 
@@ -80,7 +82,10 @@ export function settleSingle(input: {
   return { status: 'failed', nextAttemptAt: null, error: input.code ?? 'telegram_rejected' };
 }
 
-export function alertIdentity(kind: 'exchange_request' | 'logistics_request', recordKey: string): {
+export function alertIdentity(
+  kind: 'exchange_request' | 'logistics_request' | 'support_request',
+  recordKey: string,
+): {
   dedupeKey: string;
   recordKey: string;
 } | null {
@@ -89,7 +94,9 @@ export function alertIdentity(kind: 'exchange_request' | 'logistics_request', re
     return { dedupeKey: `exchange:${recordKey}`, recordKey };
   }
   if (!LOGISTICS_KEY.test(recordKey)) return null;
-  return { dedupeKey: `logistics:${recordKey.toLowerCase()}`, recordKey: recordKey.toLowerCase() };
+  const key = recordKey.toLowerCase();
+  const prefix = kind === 'support_request' ? 'support' : 'logistics';
+  return { dedupeKey: `${prefix}:${key}`, recordKey: key };
 }
 
 export function isDeliveredStatus(status: string): boolean {

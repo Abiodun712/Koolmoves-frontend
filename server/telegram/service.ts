@@ -15,9 +15,19 @@ import {
   logisticsAlert,
   logisticsHelp,
   menuKeyboard,
+  supportAlert,
   trackHelp,
 } from './copy';
-import { alertIdentity, isDeliveredStatus, settleFanout, settleSingle, PREVIEW_TTL_MS, MAX_ADMIN_BYTES, MAX_WEBHOOK_BYTES } from './policy';
+import {
+  alertIdentity,
+  AUTOMATIC_ALERT_BATCH,
+  isDeliveredStatus,
+  settleFanout,
+  settleSingle,
+  PREVIEW_TTL_MS,
+  MAX_ADMIN_BYTES,
+  MAX_WEBHOOK_BYTES,
+} from './policy';
 import type { AlertRow, BroadcastRow, SupportMessage, TelegramStore } from './store';
 import { bearerToken, hostAllowed, maskChatId, publicError, requestHost, sanitizePlainText, secretEquals } from './text';
 import type { ParsedUpdate } from './updates';
@@ -26,7 +36,7 @@ import { formatPlatformRateLine } from '../../src/lib/publishedExchangeRate';
 import type { BusinessRecord, PublishedRateRead } from './business';
 
 const DELIVERY_NOTE =
-  'Only status sent means delivered to Telegram. queued, sending, failed, needs_review, cancelled, preview, and stored are not delivered.';
+  'A saved exchange, logistics, or support request starts an automatic Telegram send. Only status sent means delivered. queued, sending, failed, needs_review, cancelled, preview, and stored are not delivered. Retry undelivered is recovery, not the normal path.';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -128,13 +138,17 @@ export function createTelegramService(deps: TelegramDeps) {
       if (parsed.data === 'logistics') return send(parsed.chatId, logisticsHelp(config.siteUrl));
       if (parsed.data === 'track') return send(parsed.chatId, trackHelp(config.siteUrl));
       const open = await store.openTicket(parsed.chatId);
-      if (open) return send(parsed.chatId, SUPPORT_ALREADY);
+      if (open) {
+        await notifySupport(config, open.id);
+        return send(parsed.chatId, SUPPORT_ALREADY);
+      }
       const created = await store.createTicket({
         chatId: parsed.chatId,
         telegramUserId: parsed.userId,
         updateId: parsed.updateId,
         now: deps.now(),
       });
+      if (created !== 'exists') await notifySupport(config, created.id);
       return send(parsed.chatId, created === 'exists' ? SUPPORT_ALREADY : SUPPORT_OPENED);
     }
     if (parsed.type !== 'text') return 'ok';
@@ -171,6 +185,24 @@ export function createTelegramService(deps: TelegramDeps) {
       await telegram.answerCallback(callbackId);
     } catch {
       // The menu message is the user-visible result.
+    }
+  }
+
+  async function notifySupport(config: TelegramConfig, ticketId: string) {
+    const identity = alertIdentity('support_request', ticketId);
+    if (!identity || config.adminChatIds.length === 0) return;
+    try {
+      await store.enqueueAlert({
+        dedupeKey: identity.dedupeKey,
+        kind: 'support_request',
+        recordKey: identity.recordKey,
+        now: deps.now(),
+        notBefore: null,
+      });
+      const claimed = await store.claimAlertByKey(identity.dedupeKey, deps.now());
+      if (claimed) await deliverClaimedAlert(deps, config, claimed);
+    } catch {
+      // The customer ticket is already stored. A failed admin alert does not undo it.
     }
   }
 }
@@ -225,7 +257,7 @@ async function handleWorker(deps: TelegramDeps, request: Request): Promise<Respo
   if (!matched) return json(401, { error: 'unauthorized' });
   try {
     await deps.store.reap(deps.now());
-    const alerts = await deliverAlerts(deps, deps.config, 10);
+    const alerts = await deliverAlerts(deps, deps.config, AUTOMATIC_ALERT_BATCH);
     const replies = await deliverReplies(deps, 10);
     const broadcasts = deps.config.channelId ? await deliverBroadcasts(deps, deps.config, 1) : [];
     return json(200, {
@@ -311,10 +343,15 @@ async function runAdmin(deps: TelegramDeps, config: TelegramConfig, adminUserId:
 }
 
 async function statusPayload(deps: TelegramDeps, config: TelegramConfig) {
-  const [counts, errors] = await Promise.all([deps.store.counts(), deps.store.recentErrors()]);
+  const [counts, errors, immediateDispatch] = await Promise.all([
+    deps.store.counts(),
+    deps.store.recentErrors(),
+    deps.store.dispatchConfigured(),
+  ]);
   return {
     status: 'enabled',
     subsystems: subsystemStatus(config, []),
+    immediateDispatch: immediateDispatch ? 'ready' : 'not_configured',
     counts,
     recentErrors: errors.map((error) => ({ ...error, error: publicError(error.error) })),
     note: DELIVERY_NOTE,
@@ -426,9 +463,22 @@ async function deliverAlerts(deps: TelegramDeps, config: TelegramConfig, limit: 
   return rows;
 }
 
-async function deliverClaimedAlert(deps: TelegramDeps, config: TelegramConfig, row: AlertRow): Promise<AlertRow> {
+async function alertText(deps: TelegramDeps, config: TelegramConfig, row: AlertRow): Promise<string | null> {
+  if (row.kind === 'support_request') {
+    const ticket = await deps.store.getTicket(row.recordKey);
+    if (!ticket) return null;
+    return supportAlert(config.siteUrl, ticket.id, ticket.status);
+  }
   const record = await deps.loadBusinessRecord(row.kind, row.recordKey);
-  if (!record) {
+  if (!record) return null;
+  return record.kind === 'exchange_request'
+    ? exchangeAlert(config.siteUrl, record.recordKey, record.status)
+    : logisticsAlert(config.siteUrl, record.recordKey, record.status, record.freightType ?? 'unknown');
+}
+
+async function deliverClaimedAlert(deps: TelegramDeps, config: TelegramConfig, row: AlertRow): Promise<AlertRow> {
+  const text = await alertText(deps, config, row);
+  if (!text) {
     return (
       (await deps.store.settleAlert(row.id, {
         status: 'cancelled',
@@ -440,10 +490,6 @@ async function deliverClaimedAlert(deps: TelegramDeps, config: TelegramConfig, r
       })) ?? row
     );
   }
-  const text =
-    record.kind === 'exchange_request'
-      ? exchangeAlert(config.siteUrl, record.recordKey, record.status)
-      : logisticsAlert(config.siteUrl, record.recordKey, record.status, record.freightType ?? 'unknown');
   const delivered = new Set(row.deliveredChatIds);
   let sawRetryable = false;
   let sawUnknown = false;

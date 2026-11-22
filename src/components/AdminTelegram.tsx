@@ -39,6 +39,7 @@ type StatusBody = {
   reasons?: string[];
   note?: string;
   error?: string;
+  immediateDispatch?: string;
   subsystems?: {
     integration?: string;
     webhook?: string;
@@ -140,17 +141,16 @@ export default function AdminTelegram() {
       <section className="p-5 bg-slate-900/90 rounded-2xl border border-purple-500/40 space-y-3">
         <h2 className="text-xs uppercase tracking-wider text-purple-300 font-bold">New request alerts</h2>
         <p className="text-xs text-slate-300">
-          Alerts are queued from exchange and packing records. This page does not send a custom message.
+          {status?.immediateDispatch === 'ready'
+            ? 'Exchange, logistics, and support alerts send automatically when the record is saved. This page can stay closed.'
+            : 'Exchange and logistics alerts wait until automatic dispatch is configured. Support alerts still send from the bot webhook. Nothing here is delivered yet.'}
         </p>
         <div className="flex flex-wrap gap-2">
-          <button type="button" disabled={busy} onClick={() => run({ op: 'reconcile' }, 'Recent requests were queued. Not delivered.')} className="px-3 py-2 rounded-xl bg-slate-800 text-xs font-semibold">
-            Queue alerts for recent requests
+          <button type="button" disabled={busy} onClick={() => run({ op: 'reconcile' }, 'Missed requests were queued for automatic delivery. Not delivered yet.')} className="px-3 py-2 rounded-xl bg-slate-800 text-xs font-semibold">
+            Backfill missed requests
           </button>
-          <button type="button" disabled={busy} onClick={() => run({ op: 'deliver' }, 'Delivery attempted. Check each status below.')} className="px-3 py-2 rounded-xl bg-emerald-700 text-xs font-semibold">
-            Deliver queued alerts
-          </button>
-          <button type="button" disabled={busy} onClick={() => run({ op: 'retry-alerts' }, 'Unconfirmed alerts were retried. Check each status.')} className="px-3 py-2 rounded-xl bg-amber-700 text-xs font-semibold">
-            Retry unconfirmed alerts
+          <button type="button" disabled={busy} onClick={() => run({ op: 'retry-alerts' }, 'Recovery retry finished. Check each status. Only Delivered to Telegram means it arrived.')} className="px-3 py-2 rounded-xl bg-amber-700 text-xs font-semibold">
+            Retry undelivered alerts
           </button>
         </div>
         <ul className="space-y-2">
@@ -158,7 +158,7 @@ export default function AdminTelegram() {
           {alerts.map((alert) => (
             <li key={alert.id} className="text-xs border border-white/10 rounded-xl p-3">
               <p>{alert.kind} · {alert.recordKey}</p>
-              <p>{deliveryStatusLabel(alert.status, alert.lastError).label}</p>
+              <p>{deliveryStatusLabel(alert.status, alert.lastError, alert.attempts).label}</p>
               {alert.lastError ? <p className="text-slate-400">Code: {alert.lastError}</p> : null}
             </li>
           ))}

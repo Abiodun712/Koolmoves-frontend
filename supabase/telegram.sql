@@ -59,7 +59,7 @@ create table if not exists public.telegram_support_messages (
 create table if not exists public.telegram_alert_outbox (
   id uuid primary key default gen_random_uuid(),
   dedupe_key text not null unique check (char_length(dedupe_key) between 8 and 120),
-  kind text not null check (kind in ('exchange_request', 'logistics_request')),
+  kind text not null check (kind in ('exchange_request', 'logistics_request', 'support_request')),
   record_key text not null check (char_length(record_key) between 4 and 80),
   status text not null default 'queued' check (status in ('queued', 'sending', 'sent', 'failed', 'needs_review', 'cancelled')),
   attempts int not null default 0 check (attempts between 0 and 20),
@@ -72,8 +72,27 @@ create table if not exists public.telegram_alert_outbox (
   updated_at timestamptz not null default now()
 );
 
+alter table public.telegram_alert_outbox drop constraint if exists telegram_alert_outbox_kind_check;
+alter table public.telegram_alert_outbox add constraint telegram_alert_outbox_kind_check
+  check (kind in ('exchange_request', 'logistics_request', 'support_request'));
+
 create index if not exists telegram_alert_outbox_status_idx
   on public.telegram_alert_outbox (status, next_attempt_at);
+
+-- One row, inserted by hand in the SQL editor. Empty means the database
+-- does not call the worker. The bearer is the worker secret, never a bot token.
+create table if not exists public.telegram_dispatch_config (
+  id int primary key check (id = 1),
+  endpoint_url text not null check (
+    endpoint_url in (
+      'https://koolmovez.com/api/telegram-worker',
+      'https://www.koolmovez.com/api/telegram-worker'
+    )
+  ),
+  bearer_token text not null check (char_length(bearer_token) between 16 and 256 and bearer_token !~ '\s'),
+  enabled boolean not null default false,
+  updated_at timestamptz not null default now()
+);
 
 create table if not exists public.telegram_rate_broadcasts (
   id uuid primary key default gen_random_uuid(),
@@ -115,6 +134,8 @@ alter table public.telegram_rate_broadcasts enable row level security;
 alter table public.telegram_rate_broadcasts force row level security;
 alter table public.telegram_rate_events enable row level security;
 alter table public.telegram_rate_events force row level security;
+alter table public.telegram_dispatch_config enable row level security;
+alter table public.telegram_dispatch_config force row level security;
 
 revoke all on table public.telegram_updates from public, anon, authenticated;
 revoke all on table public.telegram_support_tickets from public, anon, authenticated;
@@ -122,6 +143,43 @@ revoke all on table public.telegram_support_messages from public, anon, authenti
 revoke all on table public.telegram_alert_outbox from public, anon, authenticated;
 revoke all on table public.telegram_rate_broadcasts from public, anon, authenticated;
 revoke all on table public.telegram_rate_events from public, anon, authenticated;
+revoke all on table public.telegram_dispatch_config from public, anon, authenticated;
+
+-- Queues an HTTP POST with pg_net. pg_net does not start the request until
+-- the surrounding transaction commits. timeout_milliseconds is bounded.
+-- A missing extension, a missing config row, or a network error is swallowed
+-- by the caller. This function does not read a business row.
+create or replace function public.telegram_notify_dispatcher()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  cfg record;
+begin
+  select endpoint_url, bearer_token
+    into cfg
+    from public.telegram_dispatch_config
+   where id = 1 and enabled = true;
+  if not found then
+    return;
+  end if;
+  perform net.http_post(
+    url := cfg.endpoint_url,
+    body := '{"source":"telegram_outbox"}'::jsonb,
+    headers := jsonb_build_object(
+      'Authorization', 'Bearer ' || cfg.bearer_token,
+      'Content-Type', 'application/json'
+    ),
+    timeout_milliseconds := 10000
+  );
+exception when others then
+  return;
+end;
+$$;
+
+revoke all on function public.telegram_notify_dispatcher() from public, anon, authenticated;
 
 -- Trigger functions are security definer so they can write the outbox while
 -- the signed-in user cannot. Execute stays granted to anon and authenticated
@@ -150,7 +208,12 @@ begin
     )
     on conflict (dedupe_key) do nothing;
   exception when others then
-    return new;
+    null;
+  end;
+  begin
+    perform public.telegram_notify_dispatcher();
+  exception when others then
+    null;
   end;
   return new;
 end;
@@ -164,17 +227,49 @@ set search_path = public
 as $$
 begin
   begin
-    insert into public.telegram_alert_outbox (dedupe_key, kind, record_key, status, next_attempt_at)
+    insert into public.telegram_alert_outbox (dedupe_key, kind, record_key, status)
     values (
       'logistics:' || new.request_id::text,
       'logistics_request',
       new.request_id::text,
-      'queued',
-      now() + interval '2 minutes'
+      'queued'
     )
     on conflict (dedupe_key) do nothing;
   exception when others then
-    return new;
+    null;
+  end;
+  begin
+    perform public.telegram_notify_dispatcher();
+  exception when others then
+    null;
+  end;
+  return new;
+end;
+$$;
+
+create or replace function public.telegram_enqueue_support()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  begin
+    insert into public.telegram_alert_outbox (dedupe_key, kind, record_key, status)
+    values (
+      'support:' || new.id::text,
+      'support_request',
+      new.id::text,
+      'queued'
+    )
+    on conflict (dedupe_key) do nothing;
+  exception when others then
+    null;
+  end;
+  begin
+    perform public.telegram_notify_dispatcher();
+  exception when others then
+    null;
   end;
   return new;
 end;
@@ -182,6 +277,7 @@ $$;
 
 grant execute on function public.telegram_enqueue_exchange() to anon, authenticated;
 grant execute on function public.telegram_enqueue_logistics() to anon, authenticated;
+grant execute on function public.telegram_enqueue_support() to anon, authenticated, service_role;
 
 do $$
 begin
@@ -210,6 +306,12 @@ create trigger telegram_exchange_request_ai
   after insert on public.exchange_requests
   for each row
   execute function public.telegram_enqueue_exchange();
+
+drop trigger if exists telegram_support_ticket_ai on public.telegram_support_tickets;
+create trigger telegram_support_ticket_ai
+  after insert on public.telegram_support_tickets
+  for each row
+  execute function public.telegram_enqueue_support();
 
 drop trigger if exists telegram_air_packing_item_ai on public.air_packing_request_items;
 create trigger telegram_air_packing_item_ai

@@ -237,13 +237,29 @@ export function createSupabaseTelegramStore(admin: SupabaseClient): TelegramStor
         .order('created_at', { ascending: true })
         .limit(20);
       assertOk(error);
-      for (const row of rows(data)) {
-        const current = mapAlert(row);
-        if (current.nextAttemptAt != null && current.nextAttemptAt > now) continue;
+      const ready = rows(data)
+        .map(mapAlert)
+        .filter((alert) => alert.nextAttemptAt == null || alert.nextAttemptAt <= now)
+        .sort((a, b) => a.attempts - b.attempts || a.createdAt - b.createdAt);
+      for (const current of ready) {
         const claimed = await claimAlertRow(admin, current, now);
         if (claimed) return claimed;
       }
       return null;
+    },
+    async claimAlertByKey(dedupeKey, now) {
+      const { data, error } = await admin.from('telegram_alert_outbox').select('*').eq('dedupe_key', dedupeKey).maybeSingle();
+      assertOk(error);
+      if (!data) return null;
+      const current = mapAlert(asRow(data));
+      if (current.status !== 'queued') return null;
+      if (current.nextAttemptAt != null && current.nextAttemptAt > now) return null;
+      return claimAlertRow(admin, current, now);
+    },
+    async dispatchConfigured() {
+      const { data, error } = await admin.from('telegram_dispatch_config').select('enabled').eq('id', 1).maybeSingle();
+      if (error || !data || typeof data !== 'object') return false;
+      return Reflect.get(data, 'enabled') === true;
     },
     async settleAlert(id, patch) {
       const { data, error } = await admin
@@ -434,6 +450,7 @@ export function createSupabaseBusiness(admin: SupabaseClient, now = () => Date.n
         assertOk(error);
         return parseExchangeRow(asOptionalRow(data));
       }
+      if (kind !== 'logistics_request') return null;
       const { data, error } = await admin
         .from('packing_requests')
         .select(LOGISTICS_ALERT_COLUMNS)

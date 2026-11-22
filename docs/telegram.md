@@ -18,15 +18,43 @@ An admin reads and answers tickets at `/admin/telegram` after the normal admin s
 
 ## What an admin is alerted about
 
-A successful `exchange_requests` insert queues one private alert. The first saved line on an air or sea packing request queues one logistics alert, two minutes later, so a packing request that is deleted because its goods failed to save is not announced. The alert contains the reference, the type, the status, and the existing admin URL. It does not contain an email, phone, account number, or payment proof.
+A successful `exchange_requests` insert, the first saved line on an air or sea packing request, and a new Telegram support ticket each write one outbox row in the same database transaction. The alert contains the reference, the type, the status, and the existing admin URL. It does not contain an email, phone, account number, payment proof, or the support message text.
 
 `/start` does not add anyone to the admin list. Admins are numeric Telegram user ids set in the server environment. A username is rejected.
 
-The website insert does not wait for Telegram. If the queue cannot be written, the trigger swallows the error and the exchange or packing request still saves. A failed or unconfirmed Telegram call leaves the alert queued, failed, or needs review. It does not change the business row.
+The website insert does not wait on Telegram and does not roll back if the alert cannot be written or sent. The trigger catches that error. Direct inserts from the website into Supabase are covered by the database trigger, not by the browser.
 
-There is no durable in-process worker. Vercel’s cron calls `GET /api/telegram-worker` once a day at 08:00 UTC. On the Hobby plan that daily schedule is the platform limit, so it is not a near-real-time alert. The admin button “Deliver queued alerts” runs the same sender immediately and is the reliable way to deliver. A Pro plan can change the cron schedule to every few minutes; this file keeps the daily schedule so a Hobby deploy is not rejected. Nothing in the Node process keeps running after the request ends.
+### Immediate send
 
-Automatic delivery retries only when Telegram says the call was rate-limited and the previous chats that already accepted the alert are not called again. A timeout or a 5xx response is `needs_review` and is not sent again until an admin presses “Retry unconfirmed alerts”. That explicit retry can repeat a private alert if Telegram had actually accepted the timed-out call.
+After the transaction commits, `pg_net` calls `https://koolmovez.com/api/telegram-worker`. Supabase does not start that HTTP call until the commit succeeds. The worker checks the bearer secret, ignores any message text in the body, and sends only the outbox row it loads from the database. The database stops waiting after 10 seconds. Each Telegram call aborts after 4 seconds. Immediate means this send starts when the row commits. It does not promise how fast a phone shows the notification.
+
+Support tickets are also sent inside the bot webhook request, so a new support request does not depend on `pg_net`. Exchange and logistics requests do, because those inserts never pass through the Vercel app.
+
+This does not require a new paid product. `pg_net` is the extension Supabase Database Webhooks use, and it is included on the Free and Pro plans. Enable it under Database → Extensions if it is not already on. A Free project that Supabase has paused for inactivity cannot fire the call until the project is restored.
+
+The call stays off until you insert one config row yourself. This pull request does not insert it.
+
+```sql
+insert into public.telegram_dispatch_config (id, endpoint_url, bearer_token, enabled)
+values (
+  1,
+  'https://koolmovez.com/api/telegram-worker',
+  'the same random string as CRON_SECRET',
+  true
+);
+```
+
+Use the production URL only. A `vercel.app` address is rejected by the table check, and a preview function stays disabled because `VERCEL_ENV=preview`.
+
+The admin page shows instant dispatch as ready only when that row is enabled. Until then, exchange and logistics alerts are saved and are not sent on commit.
+
+### If the send fails
+
+A rate-limit response is queued and tried again on the next committed request, or by the daily recovery cron, without sending a second copy to an admin chat that already accepted it. A timeout or a 5xx response stays `needs_review` and is not marked delivered. **Retry undelivered alerts** is optional recovery for that case. Use it only when the phone did not show the alert, because a timed-out call may already have been accepted.
+
+The daily cron in `vercel.json` (`0 8 * * *`) is only that recovery. On Vercel Hobby it can run at most once a day, and not at an exact minute. It is not the instant path. A faster automatic retry, when no new request arrives to trigger another send, needs a paid schedule: Vercel Pro cron can run every minute. This file keeps the daily cron so a Hobby deploy is not rejected. Nothing was upgraded, and nothing in the Node process keeps running after the request ends.
+
+`pg_net` keeps the HTTP response for about 6 hours in `net._http_response`. Its queue is unlogged, so a database crash can drop a call that had not been sent yet. The outbox row remains for the recovery cron.
 
 ## Channel rate
 
@@ -40,7 +68,7 @@ The channel id is a numeric id starting with `-100`, stored only on the server. 
 
 ## Status
 
-The admin page reads `/api/telegram-admin`. Only a row whose status is `sent` is delivered to Telegram. `marked_by_admin` means a person attested that the channel already showed the post; the server did not call Telegram again for that action.
+The admin page reads `/api/telegram-admin`. Only a row whose status is `sent` is delivered to Telegram. `Automatic send queued` and `Automatic send in progress` are not delivered. `Retrying after the automatic send` means an earlier attempt did not succeed and another attempt is waiting. `marked_by_admin` means a person attested that the channel already showed the rate post; the server did not call Telegram again for that action.
 
 Webhook and admin requests must arrive on the host in `TELEGRAM_SITE_URL` (and its `www` pair). Preview deployments are off because Vercel sets `VERCEL_ENV=preview`. The worker is authenticated with `TELEGRAM_WORKER_SECRET` or `CRON_SECRET` instead of the host, because Vercel cron does not promise the custom domain as `Host`.
 
@@ -116,10 +144,12 @@ These checks were not run for this pull request. There is no claim that a phone 
 3. Send a sentence before tapping Talk to support. It should say the message was not sent to support.
 4. Tap Talk to support, then send a sentence. On `/admin/telegram`, one ticket appears with that sentence. Tap the button again from Telegram. A second ticket does not appear.
 5. Reply from the admin page. The phone shows the reply only if the status becomes “Delivered to Telegram”. A queued or failed status means the phone should not be expected to have it.
-6. Submit one test exchange from the website. The exchange still succeeds even if Telegram is misconfigured. The alert appears as queued. Press “Deliver queued alerts”. The private admin chat shows the reference, type, status, and admin link, and not the test account’s email or payment details. The page says delivered only after the status is `sent`.
-7. Submit one packing request. Wait two minutes, or press “Queue alerts for recent requests” and then deliver. The logistics alert uses the request id and mode, not the packing instructions.
-8. Press “Preview channel message”. The text matches the rate on the website and says it is indicative. The channel does not receive it yet. Press “Publish this preview”. The channel receives that text once. Save a different rate on `/admin` and confirm the channel does not receive another post until a new preview is confirmed.
-9. On a `*.vercel.app` preview, `/api/telegram` returns disabled even if the production variables were copied by mistake only when `VERCEL_ENV` is `preview`. Do not point the webhook at a preview URL.
+6. Enable `pg_net` if needed, then insert `telegram_dispatch_config` as shown above. Reload `/admin/telegram`. Instant dispatch should say ready. Close the admin page.
+7. Submit one test exchange from the website. The exchange still succeeds if Telegram is misconfigured. With dispatch ready, the private admin chat receives the reference, type, status, and admin link without anyone opening the admin page. It does not include the email or payment details. The page says delivered only when the status is `sent`. If it stays “Automatic send queued”, the config row is missing or `pg_net` did not call the worker.
+8. Submit one packing request. The logistics alert uses the request id and mode, not the packing instructions, and does not wait on a timer.
+9. From Telegram, tap Talk to support and send one sentence. The admin phone gets a support alert that does not include that sentence. The sentence is in the admin inbox. A second tap does not send a second alert.
+10. Press “Preview channel message”. The text matches the rate on the website and says it is indicative. The channel does not receive it yet. Press “Publish this preview”. The channel receives that text once. Save a different rate on `/admin` and confirm the channel does not receive another post until a new preview is confirmed.
+11. On a `*.vercel.app` preview, `/api/telegram` returns disabled. Do not point `pg_net` or the bot webhook at a preview URL.
 
 ## Rollback
 

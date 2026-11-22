@@ -85,6 +85,12 @@ describe('telegram SQL', () => {
     expect(sql).toContain('exception when others then');
     expect(sql).toContain('on conflict (dedupe_key) do nothing');
     expect(sql).toContain('after insert on public.exchange_requests');
+    expect(sql).toContain('net.http_post');
+    expect(sql).toContain('timeout_milliseconds := 10000');
+    expect(sql).toContain('telegram_notify_dispatcher');
+    expect(sql).toContain('support_request');
+    expect(sql).not.toContain('2 minutes');
+    expect(sql).toContain('revoke all on function public.telegram_notify_dispatcher() from public, anon, authenticated');
     expect(sql).toContain('after insert on public.air_packing_request_items');
     expect(sql).not.toContain('user_email');
     expect(sql).not.toContain('user_phone');
@@ -96,6 +102,8 @@ describe('telegram SQL', () => {
   it('rolls back only telegram objects', () => {
     expect(rollback).toContain('drop table if exists public.telegram_support_messages');
     expect(rollback).toContain('drop trigger if exists telegram_exchange_request_ai');
+    expect(rollback).toContain('drop table if exists public.telegram_dispatch_config');
+    expect(rollback).toContain('drop function if exists public.telegram_notify_dispatcher()');
     expect(rollback).not.toContain('drop table if exists public.exchange_requests');
     expect(rollback).not.toContain('drop table if exists public.packing_requests');
     expect(rollback).not.toContain('drop table if exists public.site_settings');

@@ -1,3 +1,6 @@
+/** One Telegram HTTP call. Kept under the 10 second database dispatch wait. */
+export const TELEGRAM_CALL_TIMEOUT_MS = 4_000;
+
 export type TelegramCallResult = {
   classification: 'accepted' | 'rejected' | 'retryable' | 'unknown';
   messageId: string | null;
@@ -48,7 +51,7 @@ async function callTelegram(
   body: Record<string, unknown>,
 ): Promise<TelegramCallResult> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 8_000);
+  const timer = setTimeout(() => controller.abort(), TELEGRAM_CALL_TIMEOUT_MS);
   try {
     const response = await fetchImpl(`https://api.telegram.org/bot${token}/${method}`, {
       method: 'POST',

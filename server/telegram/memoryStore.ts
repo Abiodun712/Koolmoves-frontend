@@ -12,7 +12,8 @@ import type {
   Ticket,
 } from './store';
 
-export function createMemoryTelegramStore(): TelegramStore {
+export function createMemoryTelegramStore(options?: { immediateDispatch?: boolean }): TelegramStore {
+  const immediateDispatch = options?.immediateDispatch ?? false;
   const updates = new Map<number, { kind: string; chatId: string | null; state: 'open' | 'done' }>();
   const buckets = new Map<string, number[]>();
   const tickets: Ticket[] = [];
@@ -46,13 +47,17 @@ export function createMemoryTelegramStore(): TelegramStore {
     return row;
   }
 
-  function claimNext<T extends { status: DeliveryStatus; attempts: number; claimedAt: number | null; nextAttemptAt: number | null }>(
-    rows: T[],
-    now: number,
-  ): T | null {
-    const row = rows.find(
-      (item) => item.status === 'queued' && (item.nextAttemptAt == null || item.nextAttemptAt <= now),
-    );
+  function claimNext<T extends {
+    status: DeliveryStatus;
+    attempts: number;
+    claimedAt: number | null;
+    nextAttemptAt: number | null;
+    createdAt: number;
+  }>(rows: T[], now: number): T | null {
+    const ready = rows
+      .filter((item) => item.status === 'queued' && (item.nextAttemptAt == null || item.nextAttemptAt <= now))
+      .sort((a, b) => a.attempts - b.attempts || a.createdAt - b.createdAt);
+    const row = ready[0];
     if (!row) return null;
     row.status = 'sending';
     row.attempts += 1;
@@ -220,6 +225,22 @@ export function createMemoryTelegramStore(): TelegramStore {
     async claimAlert(now) {
       const row = claimNext(alerts, now);
       return row ? copyAlert(row) : null;
+    },
+    async claimAlertByKey(dedupeKey, now) {
+      const row = alerts.find(
+        (alert) =>
+          alert.dedupeKey === dedupeKey &&
+          alert.status === 'queued' &&
+          (alert.nextAttemptAt == null || alert.nextAttemptAt <= now),
+      );
+      if (!row) return null;
+      row.status = 'sending';
+      row.attempts += 1;
+      row.claimedAt = now;
+      return copyAlert(row);
+    },
+    async dispatchConfigured() {
+      return immediateDispatch;
     },
     async settleAlert(id, patch) {
       const row = alerts.find((alert) => alert.id === id);

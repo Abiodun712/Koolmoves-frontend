@@ -74,7 +74,7 @@ describe('AdminTelegram', () => {
         </MemoryRouter>,
       );
     });
-    expect(container.textContent).toContain('Queued. Not delivered.');
+    expect(container.textContent).toContain('Automatic send queued. Not delivered.');
     expect(container.textContent).not.toContain('Delivered to Telegram');
     expect(loadTelegramAdminPage).toHaveBeenCalledTimes(1);
     expect(telegramAdmin).not.toHaveBeenCalled();

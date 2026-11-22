@@ -1,4 +1,4 @@
-export type AlertKind = 'exchange_request' | 'logistics_request';
+export type AlertKind = 'exchange_request' | 'logistics_request' | 'support_request';
 
 export type DeliveryStatus =
   | 'stored'
@@ -126,6 +126,8 @@ export interface TelegramStore {
   }): Promise<'created' | 'exists'>;
   listAlerts(): Promise<AlertRow[]>;
   claimAlert(now: number): Promise<AlertRow | null>;
+  claimAlertByKey(dedupeKey: string, now: number): Promise<AlertRow | null>;
+  dispatchConfigured(): Promise<boolean>;
   settleAlert(id: string, patch: DeliveryPatch): Promise<AlertRow | null>;
   requeueAlert(id: string): Promise<AlertRow | null>;
 
