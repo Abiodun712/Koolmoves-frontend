@@ -59,6 +59,10 @@ export default defineConfig({
         navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
           {
+            urlPattern: ({ url, sameOrigin }) => sameOrigin && url.pathname.startsWith('/api/'),
+            handler: 'NetworkOnly',
+          },
+          {
             urlPattern: ({ url }) =>
               /(\.supabase\.co|\.supabase\.in)$/i.test(url.hostname),
             handler: 'NetworkOnly',
