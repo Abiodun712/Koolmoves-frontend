@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabaseClient';
 import { makeShipmentCode, parseRatePerKgFromFeeText } from '../lib/logisticsCosting';
 import { parseNonNegativeFeeInput, storedFeeToInput } from '../lib/logisticsSettings';
 import { normalizeWarehouse, type Warehouse } from '../types/warehouse';
+import { AdminNotificationBell } from './AdminNotifications';
 
 type RequestGood = {
   id: string;
@@ -439,6 +440,7 @@ export default function AdminShippingRequests() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <AdminNotificationBell />
           <Link
             to="/admin/air-freight"
             className="bg-cyan-800/65 hover:bg-cyan-700 text-cyan-100 px-4 py-2 rounded-xl text-xs font-semibold border border-cyan-500/30"

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
+import { recordAdminExchangeNotification } from '../lib/adminExchangeNotification';
 export default function UserDashboard() {
   const  [currentView, setCurrentView] = useState<string>( 'form');
   const [bankName, setBankName] = useState("") ;
@@ -268,6 +269,14 @@ const [userProfile, setUserProfile] = useState<any>(null);
         });
         alert('Submission Error: ' + errString);
       } else {
+        // Notification is best-effort. A failure here must not undo the saved exchange.
+        void recordAdminExchangeNotification({
+          referenceNumber,
+          rmbAmount: parseFloat(rmbAmount),
+          nairaAmount: nairaTotal,
+          kmId: userKmid,
+          userEmail: userProfile.email,
+        });
         const successText = `Exchange request submitted successfully! Tracking Ref: ${referenceNumber}`;
         setNotification({
           type: 'success',

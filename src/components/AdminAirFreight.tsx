@@ -8,6 +8,7 @@ import {
   type Warehouse,
 } from '../types/warehouse';
 import AdminAirShipments from './AdminAirShipments';
+import { AdminNotificationBell } from './AdminNotifications';
 import AdminWarehouses from './AdminWarehouses';
 import {
   formatAirFreightFeeSetting,
@@ -388,6 +389,7 @@ export default function AdminAirFreight() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <AdminNotificationBell />
           <Link
             to="/admin/shipping-requests"
             className="bg-amber-800/65 hover:bg-amber-700 text-amber-100 px-4 py-2 rounded-xl text-xs font-semibold transition-all border border-amber-500/30 shadow"
