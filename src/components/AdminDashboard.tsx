@@ -274,6 +274,12 @@ const handleLogout = async () => {
     >
         Sea Freight
     </Link>
+    <Link
+        to="/admin/telegram"
+        className="bg-emerald-800/65 hover:bg-emerald-700 text-emerald-100 px-4 py-2 rounded-xl text-xs font-semibold transition-all border border-emerald-500/30 shadow"
+    >
+        Telegram
+    </Link>
     <button
         onClick={fetchAdminData}
         className="bg-purple-800/65 hover:bg-purple-700 text-cyan-200 px-4 py-2 rounded-xl text-xs font-semibold transition-all border border-purple-500/30 shadow"
@@ -314,6 +320,7 @@ const handleLogout = async () => {
                         {savingRate ? "Saving..." : "Save Rate"}
                     </button>
                 </div>
+            <p className="text-xs text-purple-200 mt-3">Saving this rate updates the website. It does not post the rate to Telegram.</p>
             </div>
 
             <div className="p-5 bg-slate-900/90 rounded-2xl border border-purple-500/40 shadow-xl flex flex-col md:flex-row justify-between items-center gap-4">
