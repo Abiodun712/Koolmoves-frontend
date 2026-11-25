@@ -1,4 +1,4 @@
-import { telegramWebhook } from '../server/telegram/production';
+import { telegramWebhook } from '../server/telegram/production.js';
 
 export default {
   fetch(request: Request): Promise<Response> {

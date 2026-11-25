@@ -1,16 +1,16 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { isoBase64URL } from '@simplewebauthn/server/helpers';
-import { webAuthnBytes } from './bytes';
-import type { AccountLookup, PasskeyAccount } from './service';
-import type { PasskeyConfig } from './config';
+import { webAuthnBytes } from './bytes.js';
+import type { AccountLookup, PasskeyAccount } from './service.js';
+import type { PasskeyConfig } from './config.js';
 import {
   issueSessionForUser,
   type DirectoryUser,
   type MagicLink,
   type SessionDirectory,
-} from './sessionIssuer';
-import type { SessionIssuer } from './service';
-import { displayNameFrom } from './text';
+} from './sessionIssuer.js';
+import type { SessionIssuer } from './service.js';
+import { displayNameFrom } from './text.js';
 import {
   PasskeyStorageError,
   type ChallengeKind,
@@ -20,7 +20,7 @@ import {
   type PublicCredential,
   type StoredChallenge,
   type StoredCredential,
-} from './store';
+} from './store.js';
 
 type ChallengeRow = {
   challenge: string;

@@ -1,4 +1,4 @@
-import { PUBLIC_SUPABASE_ANON_KEY, PUBLIC_SUPABASE_URL } from '../passkeys/publicSupabase';
+import { PUBLIC_SUPABASE_ANON_KEY, PUBLIC_SUPABASE_URL } from '../passkeys/publicSupabase.js';
 
 export type TelegramConfig = {
   botToken: string;

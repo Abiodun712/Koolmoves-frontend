@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
-import type { TelegramConfig } from './config';
-import { subsystemStatus } from './config';
-import type { TelegramClient } from './client';
+import type { TelegramConfig } from './config.js';
+import { subsystemStatus } from './config.js';
+import type { TelegramClient } from './client.js';
 import {
   MENU_INTRO,
   SUPPORT_ALREADY,
@@ -17,7 +17,7 @@ import {
   menuKeyboard,
   supportAlert,
   trackHelp,
-} from './copy';
+} from './copy.js';
 import {
   alertIdentity,
   AUTOMATIC_ALERT_BATCH,
@@ -27,13 +27,13 @@ import {
   PREVIEW_TTL_MS,
   MAX_ADMIN_BYTES,
   MAX_WEBHOOK_BYTES,
-} from './policy';
-import type { AlertRow, BroadcastRow, SupportMessage, TelegramStore } from './store';
-import { bearerToken, hostAllowed, maskChatId, publicError, requestHost, sanitizePlainText, secretEquals } from './text';
-import type { ParsedUpdate } from './updates';
-import { parseUpdate } from './updates';
-import { formatPlatformRateLine } from '../../src/lib/publishedExchangeRate';
-import type { BusinessRecord, PublishedRateRead } from './business';
+} from './policy.js';
+import type { AlertRow, BroadcastRow, SupportMessage, TelegramStore } from './store.js';
+import { bearerToken, hostAllowed, maskChatId, publicError, requestHost, sanitizePlainText, secretEquals } from './text.js';
+import type { ParsedUpdate } from './updates.js';
+import { parseUpdate } from './updates.js';
+import { formatPlatformRateLine } from '../../src/lib/publishedExchangeRate.js';
+import type { BusinessRecord, PublishedRateRead } from './business.js';
 
 const DELIVERY_NOTE =
   'A saved exchange, logistics, or support request starts an automatic Telegram send. Only status sent means delivered. queued, sending, failed, needs_review, cancelled, preview, and stored are not delivered. Retry undelivered is recovery, not the normal path.';

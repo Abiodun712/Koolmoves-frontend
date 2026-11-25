@@ -2,9 +2,9 @@ import {
   formatPlatformRateLine,
   parsePublishedExchangeRate,
   type PublishedRate,
-} from '../../src/lib/publishedExchangeRate';
-import { safeToken } from './text';
-import type { AlertKind } from './store';
+} from '../../src/lib/publishedExchangeRate.js';
+import { safeToken } from './text.js';
+import type { AlertKind } from './store.js';
 
 export const EXCHANGE_ALERT_COLUMNS = 'reference_number, status';
 export const LOGISTICS_ALERT_COLUMNS = 'id, status, freight_type';

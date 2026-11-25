@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
-import type { PasskeyFailure } from './service';
-import { createPasskeyService } from './service';
-import type { AccountLookup, RelyingParty, SessionIssuer } from './service';
-import type { PasskeyStore } from './store';
+import type { PasskeyFailure } from './service.js';
+import { createPasskeyService } from './service.js';
+import type { AccountLookup, RelyingParty, SessionIssuer } from './service.js';
+import type { PasskeyStore } from './store.js';
 
 const MAX_BODY_BYTES = 16_384;
 

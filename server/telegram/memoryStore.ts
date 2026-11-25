@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { LEASE_MS } from './policy';
+import { LEASE_MS } from './policy.js';
 import type {
   AlertRow,
   BroadcastRow,
@@ -10,7 +10,7 @@ import type {
   SupportMessage,
   TelegramStore,
   Ticket,
-} from './store';
+} from './store.js';
 
 export function createMemoryTelegramStore(options?: { immediateDispatch?: boolean }): TelegramStore {
   const immediateDispatch = options?.immediateDispatch ?? false;

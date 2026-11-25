@@ -1,10 +1,10 @@
 import { createClient } from '@supabase/supabase-js';
-import { createTelegramClient, disabledTelegramClient } from './client';
-import { loadTelegramConfig, type TelegramConfig } from './config';
-import { createTelegramService } from './service';
-import { createMemoryTelegramStore } from './memoryStore';
-import { createSupabaseBusiness, createSupabaseTelegramStore } from './supabase';
-import { PUBLIC_SUPABASE_ANON_KEY, PUBLIC_SUPABASE_URL } from '../passkeys/publicSupabase';
+import { createTelegramClient, disabledTelegramClient } from './client.js';
+import { loadTelegramConfig, type TelegramConfig } from './config.js';
+import { createTelegramService } from './service.js';
+import { createMemoryTelegramStore } from './memoryStore.js';
+import { createSupabaseBusiness, createSupabaseTelegramStore } from './supabase.js';
+import { PUBLIC_SUPABASE_ANON_KEY, PUBLIC_SUPABASE_URL } from '../passkeys/publicSupabase.js';
 
 export type ServerAuth = {
   supabaseUrl: string;
