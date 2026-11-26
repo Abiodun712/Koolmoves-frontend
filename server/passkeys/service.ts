@@ -9,11 +9,11 @@ import type {
   AuthenticationResponseJSON,
   RegistrationResponseJSON,
 } from '@simplewebauthn/server';
-import { webAuthnBytes } from './bytes';
-import { deviceLabelFrom, displayNameFrom } from './text';
-import type { PasskeyStore, PublicCredential } from './store';
-import { PasskeyStorageError } from './store';
-import type { IssuedSession, SessionIssueResult } from './sessionIssuer';
+import { webAuthnBytes } from './bytes.js';
+import { deviceLabelFrom, displayNameFrom } from './text.js';
+import type { PasskeyStore, PublicCredential } from './store.js';
+import { PasskeyStorageError } from './store.js';
+import type { IssuedSession, SessionIssueResult } from './sessionIssuer.js';
 
 const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 const RATE_WINDOW_MS = 10 * 60 * 1000;

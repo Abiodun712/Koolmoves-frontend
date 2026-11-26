@@ -1,5 +1,5 @@
-import { PUBLIC_SUPABASE_ANON_KEY, PUBLIC_SUPABASE_URL } from './publicSupabase';
-import { stripControls } from './text';
+import { PUBLIC_SUPABASE_ANON_KEY, PUBLIC_SUPABASE_URL } from './publicSupabase.js';
+import { stripControls } from './text.js';
 
 export type PasskeyConfig = {
   rpId: string;

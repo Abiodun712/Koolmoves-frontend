@@ -1,4 +1,4 @@
-import { INDICATIVE_RATE_NOTE } from '../../src/lib/publishedExchangeRate';
+import { INDICATIVE_RATE_NOTE } from '../../src/lib/publishedExchangeRate.js';
 
 export const MENU_INTRO = [
   'KoolMovez',

@@ -1,6 +1,6 @@
 import { type SupabaseClient } from '@supabase/supabase-js';
-import { LEASE_MS } from './policy';
-import type { BusinessRecord, PublishedRateRead } from './business';
+import { LEASE_MS } from './policy.js';
+import type { BusinessRecord, PublishedRateRead } from './business.js';
 import {
   EXCHANGE_ALERT_COLUMNS,
   LOGISTICS_ALERT_COLUMNS,
@@ -8,8 +8,8 @@ import {
   parseExchangeRow,
   parseLogisticsRow,
   readRateValue,
-} from './business';
-import { alertIdentity } from './policy';
+} from './business.js';
+import { alertIdentity } from './policy.js';
 import type {
   AlertKind,
   AlertRow,
@@ -21,7 +21,7 @@ import type {
   SupportMessage,
   TelegramStore,
   Ticket,
-} from './store';
+} from './store.js';
 
 type Row = Record<string, unknown>;
 

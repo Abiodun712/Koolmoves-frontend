@@ -1,12 +1,12 @@
-import { loadPasskeyConfig } from './config';
-import { json } from './routes';
-import { createPasskeyApi } from './routes';
+import { loadPasskeyConfig } from './config.js';
+import { json } from './routes.js';
+import { createPasskeyApi } from './routes.js';
 import {
   createServiceClient,
   createSupabaseAccountLookup,
   createSupabasePasskeyStore,
   createSupabaseSessionIssuer,
-} from './supabase';
+} from './supabase.js';
 
 const loaded = loadPasskeyConfig(process.env);
 
