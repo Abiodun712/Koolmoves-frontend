@@ -1,5 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabaseClient';
+import { telegramAdmin } from '../lib/telegramAdminClient';
+import {
+  RATE_SAVE_IN_FLIGHT,
+  RATE_SAVE_NOT_DELIVERED,
+  RATE_SAVE_NOT_STARTED,
+  RATE_SAVE_SENT,
+  shouldPostSavedRate,
+  unchangedRateSaveNotice,
+} from '../lib/publishedExchangeRate';
 import { Link, useNavigate } from 'react-router-dom';
 import {useAuth } from '../contexts/AuthContext';
 export default function AdminDashboard() {
@@ -14,7 +23,9 @@ const [rejectRequest, setRejectRequest] = useState<any>(null);
     const [platformStatus, setPlatformStatus] = useState<string>('active');
     const [updatingStatus, setUpdatingStatus] = useState<boolean>(false);
     const [exchangeRate, setExchangeRate] = useState('');
+    const [exchangeRateLoaded, setExchangeRateLoaded] = useState('');
     const [savingRate, setSavingRate] = useState(false);
+    const savingRateRef = useRef(false);
     const [rmbPaymentProof, setRmbPaymentProof] = useState('');
     const [uploadingRmbProof, setUploadingRmbProof] = useState(false);
     const [adminNote, setAdminNote] = useState('');
@@ -27,15 +38,19 @@ const handleLogout = async () => {
   navigate('/login');
 };
     const saveExchangeRate = async () => {
+        if (savingRateRef.current) return;
+        const previousRate = exchangeRateLoaded;
+        const nextRate = exchangeRate;
+        savingRateRef.current = true;
+        setSavingRate(true);
+        let saved = false;
         try {
-            setSavingRate(true);
-
             const { error } = await supabase
                 .from("site_settings")
                 .upsert(
                     {
                         key: "exchange_rate",
-                        value: exchangeRate,
+                        value: nextRate,
                         updated_at: new Date().toISOString(),
                     },
                     {
@@ -43,13 +58,32 @@ const handleLogout = async () => {
                     }
                 );
             if (error) throw error;
-
-            alert("Exchange rate updated successfully!");
-
+            saved = true;
+            setExchangeRateLoaded(nextRate);
+            if (!shouldPostSavedRate(previousRate, nextRate)) {
+                alert(unchangedRateSaveNotice(nextRate));
+                return;
+            }
+            const result = await telegramAdmin<{
+                broadcasts?: Array<{ status?: string; delivered?: boolean; lastError?: string | null }>;
+                inFlight?: boolean;
+                error?: string;
+            }>({ op: 'publish-saved-rate', previous: previousRate });
+            const broadcast = result.body.broadcasts?.[0];
+            if (result.body.inFlight && !broadcast) {
+                alert(RATE_SAVE_IN_FLIGHT);
+            } else if (result.status >= 400 || !broadcast) {
+                alert(RATE_SAVE_NOT_STARTED);
+            } else if (broadcast.delivered && broadcast.status === 'sent' && broadcast.lastError !== 'marked_by_admin') {
+                alert(RATE_SAVE_SENT);
+            } else {
+                alert(RATE_SAVE_NOT_DELIVERED);
+            }
         } catch (error) {
             console.error(error);
-            alert("Failed to update exchange rate.");
+            alert(saved ? RATE_SAVE_NOT_STARTED : "Failed to update exchange rate.");
         } finally {
+            savingRateRef.current = false;
             setSavingRate(false);
         }
     };
@@ -90,7 +124,8 @@ const handleLogout = async () => {
             .single();
 
         if (rateData) {
-            setExchangeRate(rateData.value);
+            setExchangeRate(String(rateData.value ?? ''));
+            setExchangeRateLoaded(String(rateData.value ?? ''));
         }
 
         setLoading(false);
@@ -320,7 +355,7 @@ const handleLogout = async () => {
                         {savingRate ? "Saving..." : "Save Rate"}
                     </button>
                 </div>
-            <p className="text-xs text-purple-200 mt-3">Saving this rate updates the website. It does not post the rate to Telegram.</p>
+            <p className="text-xs text-purple-200 mt-3">Saving a different rate updates the website and posts that rate to the Telegram channel immediately. Each change is posted, including several times in one day. Saving the same rate again does not post.</p>
             </div>
 
             <div className="p-5 bg-slate-900/90 rounded-2xl border border-purple-500/40 shadow-xl flex flex-col md:flex-row justify-between items-center gap-4">

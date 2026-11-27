@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   fetchPublishedExchangeRate,
   formatPlatformRateLine,
+  isSamePublishedRate,
   parsePublishedExchangeRate,
+  shouldPostSavedRate,
 } from './publishedExchangeRate';
 
 describe('parsePublishedExchangeRate', () => {
@@ -33,6 +35,19 @@ describe('formatPlatformRateLine', () => {
     expect(formatPlatformRateLine(-1)).toBeNull();
     expect(formatPlatformRateLine(Number.NaN)).toBeNull();
     expect(formatPlatformRateLine(Number.POSITIVE_INFINITY)).toBeNull();
+  });
+});
+
+describe('shouldPostSavedRate', () => {
+  it('posts only when the published line changes, with no once-per-day rule', () => {
+    expect(shouldPostSavedRate('210', '210')).toBe(false);
+    expect(shouldPostSavedRate('210', '210.00')).toBe(false);
+    expect(shouldPostSavedRate('210.00', '210')).toBe(false);
+    expect(isSamePublishedRate('1,250', '1250')).toBe(true);
+    expect(shouldPostSavedRate('210', '211')).toBe(true);
+    expect(shouldPostSavedRate('211', '210')).toBe(true);
+    expect(shouldPostSavedRate('210', 'abc')).toBe(false);
+    expect(shouldPostSavedRate('', '210')).toBe(true);
   });
 });
 

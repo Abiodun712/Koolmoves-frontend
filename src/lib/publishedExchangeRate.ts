@@ -52,6 +52,50 @@ export function formatPlatformRateLine(rate: number): string | null {
   return `1 RMB = ₦${rendered}`;
 }
 
+/** The channel line for a stored setting, or null when it is not a published rate. */
+export function publishedRateLine(value: unknown): string | null {
+  const parsed = parsePublishedExchangeRate(value);
+  if (parsed.status !== 'ready') return null;
+  return formatPlatformRateLine(parsed.rate);
+}
+
+/** True when both values are published rates and the channel line is the same. */
+export function isSamePublishedRate(left: unknown, right: unknown): boolean {
+  const a = publishedRateLine(left);
+  const b = publishedRateLine(right);
+  return a != null && a === b;
+}
+
+/**
+ * A save should post only when the new value is a published rate and its
+ * channel line differs from the previous one. `210` and `210.00` are the same
+ * rate. Returning to an earlier number later is not the same rate.
+ */
+export function shouldPostSavedRate(previous: unknown, next: unknown): boolean {
+  return publishedRateLine(next) != null && !isSamePublishedRate(previous, next);
+}
+
+export const RATE_SAVE_UNCHANGED =
+  'Exchange rate saved. The rate did not change, so it was not posted to Telegram.';
+
+export const RATE_SAVE_NOT_A_RATE =
+  'Exchange rate saved. That value is not a published rate, so it was not posted to Telegram.';
+
+export const RATE_SAVE_SENT = 'Exchange rate saved and posted to the Telegram channel.';
+
+export const RATE_SAVE_IN_FLIGHT =
+  'Exchange rate saved. The channel post is being sent now.';
+
+export const RATE_SAVE_NOT_DELIVERED =
+  'Exchange rate saved. Telegram did not confirm the channel post. The Telegram admin page shows the status. Saving the same rate again does not post it again.';
+
+export const RATE_SAVE_NOT_STARTED =
+  'Exchange rate saved. The channel post did not start. You can publish it from the Telegram admin page.';
+
+export function unchangedRateSaveNotice(next: unknown): string {
+  return publishedRateLine(next) == null ? RATE_SAVE_NOT_A_RATE : RATE_SAVE_UNCHANGED;
+}
+
 export function publishedRateFromRead(read: PublishedRateRead): PublishedRate {
   if (read.error || !read.data) return { status: 'unavailable' };
   return parsePublishedExchangeRate(read.data.value);

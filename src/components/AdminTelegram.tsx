@@ -168,7 +168,7 @@ export default function AdminTelegram() {
       <section className="p-5 bg-slate-900/90 rounded-2xl border border-purple-500/40 space-y-3">
         <h2 className="text-xs uppercase tracking-wider text-purple-300 font-bold">Channel rate</h2>
         <p className="text-xs text-slate-300">
-          Saving the website rate does not post it. Preview, then confirm, to approve one channel message from the current published rate.
+          Saving a changed rate on the exchange admin page posts it here immediately. Saving the same rate again does not. Preview, then confirm, still publishes the current rate when you need to send it yourself.
         </p>
         <button
           type="button"

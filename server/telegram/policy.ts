@@ -4,6 +4,11 @@ export const PREVIEW_TTL_MS = 15 * 60_000;
 /** Database waits at most this long for the worker. Each Telegram call aborts sooner. */
 export const DISPATCH_WAIT_MS = 10_000;
 export const AUTOMATIC_ALERT_BATCH = 3;
+/**
+ * Runaway guard for one immediate dispatch. Each changed save is sent in that
+ * request, with no delay and no daily cap. This does not hold posts for cron.
+ */
+export const MAX_RATE_POSTS_PER_DISPATCH = 20;
 export const MAX_WEBHOOK_BYTES = 65_536;
 export const MAX_ADMIN_BYTES = 16_384;
 

@@ -102,11 +102,40 @@ describe('telegram SQL', () => {
   it('rolls back only telegram objects', () => {
     expect(rollback).toContain('drop table if exists public.telegram_support_messages');
     expect(rollback).toContain('drop trigger if exists telegram_exchange_request_ai');
+    expect(rollback).toContain('drop trigger if exists telegram_exchange_rate_aiud on public.site_settings');
+    expect(rollback).toContain('drop function if exists public.telegram_enqueue_rate_change()');
+    expect(rollback).toContain('drop table if exists public.telegram_rate_changes');
     expect(rollback).toContain('drop table if exists public.telegram_dispatch_config');
     expect(rollback).toContain('drop function if exists public.telegram_notify_dispatcher()');
     expect(rollback).not.toContain('drop table if exists public.exchange_requests');
     expect(rollback).not.toContain('drop table if exists public.packing_requests');
     expect(rollback).not.toContain('drop table if exists public.site_settings');
+  });
+});
+
+describe('exchange rate autopost SQL', () => {
+  const sql = readFileSync(new URL('../../supabase/telegram_rate_autopost.sql', import.meta.url), 'utf8').toLowerCase();
+  const executable = sql.replace(/--[^\n]*/g, '');
+
+  it('queues one channel post for a changed exchange_rate and does not schedule, debounce, or cap the day', () => {
+    expect(sql).toContain("is distinct from 'exchange_rate'");
+    expect(sql).toContain('is not distinct from btrim');
+    expect(sql).toContain('telegram_notify_dispatcher');
+    expect(sql).toContain('after insert or update of value on public.site_settings');
+    expect(sql).toContain('exception when others then');
+    expect(sql).toContain('source_change_id');
+    expect(sql).toContain('force row level security');
+    expect(sql).toContain('revoke all on table public.telegram_rate_changes from public, anon, authenticated');
+    expect(executable).not.toContain('pg_sleep');
+    expect(executable).not.toContain('debounce');
+    expect(executable).not.toContain('cron');
+    expect(executable).not.toContain('interval');
+    expect(sql).not.toContain('bot_token');
+    expect(sql).not.toContain('api.telegram.org');
+    expect(sql).not.toContain('packing_fee');
+    expect(sql).not.toContain('freight_fee');
+    expect(sql).not.toContain('clearing_fee');
+    expect(sql).not.toContain('drop table if exists public.site_settings');
   });
 });
 

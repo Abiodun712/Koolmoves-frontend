@@ -58,13 +58,25 @@ The daily cron in `vercel.json` (`0 8 * * *`) is only that recovery. On Vercel H
 
 ## Channel rate
 
-The number posted is the existing `site_settings` value `exchange_rate`, the same value the website calculator reads. It is formatted with the existing website line `1 RMB = ₦…`, plus the existing sentence that the rate is indicative and the final rate is locked when an exchange request is created. Packing, freight, and clearing amounts are not part of that setting, so they are not added to the post.
+The number posted is the existing `site_settings` value `exchange_rate`, the same value the website calculator reads. It is formatted with the existing website line `1 RMB = ₦…`, plus the existing sentence that the rate is indicative and the final rate is locked when an exchange request is created. The post also includes the site link from `TELEGRAM_SITE_URL` (`https://koolmovez.com/` in production). Packing, freight, and clearing amounts are not part of that setting, so they are not added to the post. The post does not add a Mini App or a `t.me` startapp link.
 
-Saving the rate on `/admin` does not post it. Opening `/admin/telegram` or refreshing the website rate does not post it. An admin previews the exact text, then presses “Publish this preview”. The server reads the rate again at that moment. If it changed, the preview is cancelled. The publish action is the approval. There is no scheduled or automatic post.
+Saving a published rate on `/admin` writes `site_settings.exchange_rate` directly. When that save succeeds and the published number changed, the admin page posts it in the same action: it calls `/api/telegram-admin` with `publish-saved-rate`, and that request sends the channel message before it returns. The first attempt is that request. It does not wait, debounce, or collect later saves into one post.
 
-If Telegram does not confirm the post, the status stays `needs_review` and a second preview cannot be published until an admin marks the first one not posted, or marks it already posted without making another Telegram call. The screen says which of those happened. `queued`, `sending`, `failed`, `needs_review`, `preview`, and `cancelled` are not described as delivered.
+The rate can change many times in one day. Each changed save gets its own post, including a save that returns to a number already posted earlier that day. There is no daily cap and no once-per-day post. Saving the same rate again does not post. A different spelling of the same number, such as `210` and `210.00`, is the same published rate and does not post again.
 
-The channel id is a numeric id starting with `-100`, stored only on the server. Leaving `TELEGRAM_CHANNEL_ID` empty keeps alerts and support working and refuses channel posts.
+If `supabase/telegram_rate_autopost.sql` has been applied, the save also inserts one `telegram_rate_changes` row and calls the same post-commit dispatcher used for exchange and logistics alerts (`telegram_notify_dispatcher` → `/api/telegram-worker`). That worker sends the queued change in that request. The save-path call and the dispatcher share one broadcast per change, so a rate is not posted twice for one save. Apply that SQL by hand if this database already has `supabase/telegram.sql`. This change does not apply it, and it does not change production environment variables, secrets, the webhook, or the dispatcher row. Until the SQL is applied, the save-path call still posts the current rate immediately.
+
+Opening `/admin/telegram` or refreshing the website rate does not post. Preview still does not send. “Publish this preview” still re-reads the rate, cancels that preview if the saved rate changed, and sends only when the admin confirms. That manual publish remains available and can send the current rate again on purpose.
+
+The website save does not wait on the database trigger and does not roll back if Telegram cannot accept the post. The save-path request does wait for the first Telegram attempt so the admin page can show whether it was delivered.
+
+### If the channel post does not go out
+
+The broadcast uses the same statuses as a manual publish. Only `sent` is delivered. A rate-limit response stays on that same broadcast and is retried later by the existing recovery path. That retry is not a second copy, and it is not how the first attempt is made. A timeout or another unconfirmed response stays `needs_review` and is not marked delivered. A rejected post stays `failed`. Saving the same rate again does not send another copy. An admin can mark the row not posted, or mark it already posted without another Telegram call, from `/admin/telegram`. A later save of a different rate still posts that new rate immediately, including while an older row is `needs_review`.
+
+There is no new cron and no rate schedule. The daily cron already in `vercel.json` (`0 8 * * *`) remains recovery for alerts and for a rate broadcast whose first attempt was retryable. It is not the path that publishes a rate an admin just saved.
+
+The channel id is a numeric id starting with `-100`, stored only on the server. Leaving `TELEGRAM_CHANNEL_ID` empty keeps alerts and support working and refuses channel posts. A save made while the channel id is empty does not leave a rate waiting to be posted later.
 
 ## Status
 
@@ -116,7 +128,7 @@ Do not run `supabase/telegram_rollback.sql` during setup. It drops only the Tele
 
 Do these in order. This pull request has not done any of them.
 
-1. Apply `supabase/telegram.sql`.
+1. Apply `supabase/telegram.sql`. If that file was already applied, also apply `supabase/telegram_rate_autopost.sql` once so a changed exchange rate is queued at commit. The save button still posts immediately before that SQL is applied.
 2. Set the production environment variables above. Leave the feature off on Preview.
 3. Deploy the revision that contains this code.
 4. Sign in as an admin and open `https://koolmovez.com/admin/telegram`. The status should say Enabled, and the channel line should match whether `TELEGRAM_CHANNEL_ID` is set. Queue counts of zero are expected.
@@ -148,7 +160,7 @@ These checks were not run for this pull request. There is no claim that a phone 
 7. Submit one test exchange from the website. The exchange still succeeds if Telegram is misconfigured. With dispatch ready, the private admin chat receives the reference, type, status, and admin link without anyone opening the admin page. It does not include the email or payment details. The page says delivered only when the status is `sent`. If it stays “Automatic send queued”, the config row is missing or `pg_net` did not call the worker.
 8. Submit one packing request. The logistics alert uses the request id and mode, not the packing instructions, and does not wait on a timer.
 9. From Telegram, tap Talk to support and send one sentence. The admin phone gets a support alert that does not include that sentence. The sentence is in the admin inbox. A second tap does not send a second alert.
-10. Press “Preview channel message”. The text matches the rate on the website and says it is indicative. The channel does not receive it yet. Press “Publish this preview”. The channel receives that text once. Save a different rate on `/admin` and confirm the channel does not receive another post until a new preview is confirmed.
+10. Press “Preview channel message”. The text matches the rate on the website and says it is indicative. The channel does not receive it yet. Press “Publish this preview”. The channel receives that text once. On `/admin`, save a different rate. The channel receives that new text without opening preview. Save the same rate again. The channel does not receive another post. Save a third rate on the same day, including a return to an earlier number. The channel receives that post too. A failed send stays unconfirmed on `/admin/telegram` until an admin marks it; it is not described as delivered.
 11. On a `*.vercel.app` preview, `/api/telegram` returns disabled. Do not point `pg_net` or the bot webhook at a preview URL.
 
 ## Rollback
@@ -160,4 +172,4 @@ These checks were not run for this pull request. There is no claim that a phone 
 
 ## What this does not do
 
-It does not link Telegram to a KoolMovez account, offer Telegram login, open a Mini App, call an AI model, or approve a payment. It does not change passkeys, password reset, the exchange form, or the freight forms. It does not depend on the separate in-app exchange notification work, and it does not run that migration. It does not generate a rate. It does not post a rate on a schedule. It does not prove that a message arrived on a phone.
+It does not link Telegram to a KoolMovez account, offer Telegram login, open a Mini App, call an AI model, or approve a payment. It does not change passkeys, password reset, the exchange form, or the freight forms. It does not depend on the separate in-app exchange notification work, and it does not run that migration. It does not generate a rate. It does not post a rate on a schedule, and it does not cap or merge how many changed rates can be posted in a day. It does not prove that a message arrived on a phone.

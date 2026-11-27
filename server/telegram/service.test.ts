@@ -55,8 +55,9 @@ function harness(options: {
   reasons?: string[];
   onSend?: (call: Send, index: number) => TelegramCallResult;
   rate?: PublishedRateRead | null;
+  rateChangesInstalled?: boolean;
 } = {}) {
-  const store = createMemoryTelegramStore();
+  const store = createMemoryTelegramStore({ rateChangesInstalled: options.rateChangesInstalled });
   const calls: Send[] = [];
   const records = new Map<string, BusinessRecord>();
   let now = Date.parse('2026-11-22T12:00:00.000Z');
@@ -623,6 +624,118 @@ describe('automatic admin delivery', () => {
     const opened = await service.webhook(webhook(callback(7, 555001, 'support')));
     expect(opened.status).toBe(200);
     expect(calls.some((call) => call.text === SUPPORT_OPENED)).toBe(true);
+  });
+});
+
+describe('immediate channel rate on save', () => {
+  const adminId = '11111111-1111-4111-8111-111111111111';
+
+  it('posts every changed rate in the save request, including a later return to an earlier rate', async () => {
+    const { service, store, calls, now, setRate } = harness();
+    await store.recordRateChange({ rateValue: '215', previousValue: '210', createdBy: adminId, now: now() });
+    const posted = asJson(await (await service.admin(admin({ op: 'publish-saved-rate', previous: '210' }))).json());
+    expect(posted.broadcasts[0]).toMatchObject({ status: 'sent', delivered: true, rateLine: '1 RMB = ₦215' });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      chatId: '-1001234567890',
+      text: broadcastBody('https://koolmovez.com', '1 RMB = ₦215'),
+    });
+    expect(calls[0].text).not.toMatch(/startapp|t\.me/i);
+    expect(calls[0].text).not.toMatch(/packing|freight|clearing/i);
+    setRate({ raw: '215', parsed: { status: 'ready', rate: 215 } });
+    await service.admin(admin({ op: 'publish-saved-rate', previous: '210' }));
+    expect(calls).toHaveLength(1);
+
+    await store.recordRateChange({ rateValue: '216', previousValue: '215', createdBy: adminId, now: now() });
+    await store.recordRateChange({ rateValue: '215', previousValue: '216', createdBy: adminId, now: now() });
+    const more = asJson(await (await service.admin(admin({ op: 'publish-saved-rate', previous: '215' }))).json());
+    expect(more.broadcasts.map((row: { rateLine: string; status: string }) => [row.rateLine, row.status])).toEqual([
+      ['1 RMB = ₦216', 'sent'],
+      ['1 RMB = ₦215', 'sent'],
+    ]);
+    expect(calls.map((call) => call.text)).toEqual([
+      broadcastBody('https://koolmovez.com', '1 RMB = ₦215'),
+      broadcastBody('https://koolmovez.com', '1 RMB = ₦216'),
+      broadcastBody('https://koolmovez.com', '1 RMB = ₦215'),
+    ]);
+  });
+
+  it('does not start a second post while that change is already being sent', async () => {
+    const { service, store, calls, now, setRate } = harness();
+    setRate({ raw: '211', parsed: { status: 'ready', rate: 211 } });
+    await store.recordRateChange({ rateValue: '211', previousValue: '210', createdBy: adminId, now: now() });
+    expect(await store.claimRateChange(now())).toMatchObject({ installed: true, change: { status: 'sending' } });
+    const response = asJson(await (await service.admin(admin({ op: 'publish-saved-rate', previous: '210' }))).json());
+    expect(response.inFlight).toBe(true);
+    expect(response.broadcasts).toEqual([]);
+    expect(calls).toEqual([]);
+  });
+
+  it('does not post when the saved number is unchanged', async () => {
+    const { service, store, calls, now } = harness();
+    await store.recordRateChange({ rateValue: '210', previousValue: '210', createdBy: adminId, now: now() });
+    await store.recordRateChange({ rateValue: '210.00', previousValue: '210', createdBy: adminId, now: now() });
+    const response = await service.admin(admin({ op: 'publish-saved-rate', previous: '210' }));
+    expect(response.status).toBe(200);
+    expect(asJson(await response.json()).broadcasts).toEqual([]);
+    expect(calls).toEqual([]);
+  });
+
+  it('posts the live rate immediately when the change table is not installed yet', async () => {
+    const { service, calls, setRate } = harness({ rateChangesInstalled: false });
+    setRate({ raw: '211', parsed: { status: 'ready', rate: 211 } });
+    const first = asJson(await (await service.admin(admin({ op: 'publish-saved-rate', previous: '210' }))).json());
+    expect(first.broadcasts[0]).toMatchObject({ status: 'sent', delivered: true, rateLine: '1 RMB = ₦211' });
+    expect(calls[0].text).toBe(broadcastBody('https://koolmovez.com', '1 RMB = ₦211'));
+    const same = asJson(await (await service.admin(admin({ op: 'publish-saved-rate', previous: '211' }))).json());
+    expect(same.broadcasts).toEqual([]);
+    expect(calls).toHaveLength(1);
+    setRate({ raw: '210', parsed: { status: 'ready', rate: 210 } });
+    const back = asJson(await (await service.admin(admin({ op: 'publish-saved-rate', previous: '211' }))).json());
+    expect(back.broadcasts[0].rateLine).toBe('1 RMB = ₦210');
+    expect(calls).toHaveLength(2);
+  });
+
+  it('leaves an unconfirmed send on needs_review and still posts the next different rate immediately', async () => {
+    const { service, store, calls, now } = harness({
+      onSend: () => ({ classification: 'unknown', messageId: null, code: 'telegram_timeout' }),
+    });
+    await store.recordRateChange({ rateValue: '211', previousValue: '210', createdBy: adminId, now: now() });
+    const failed = asJson(await (await service.worker(worker())).json());
+    expect(failed.broadcasts[0]).toMatchObject({ status: 'needs_review', delivered: false, lastError: 'telegram_timeout' });
+    expect(calls).toHaveLength(1);
+    await service.worker(worker());
+    expect(calls).toHaveLength(1);
+    await store.recordRateChange({ rateValue: '212', previousValue: '211', createdBy: adminId, now: now() });
+    const next = asJson(await (await service.worker(worker())).json());
+    expect(next.broadcasts[0]).toMatchObject({ status: 'needs_review', delivered: false });
+    expect(calls).toHaveLength(2);
+    expect(calls[1].text).toBe(broadcastBody('https://koolmovez.com', '1 RMB = ₦212'));
+  });
+
+  it('refuses a channel post without a channel and still lets an admin publish a preview once', async () => {
+    const missing = harness({ config: testConfig({ TELEGRAM_CHANNEL_ID: '' }) });
+    await missing.store.recordRateChange({
+      rateValue: '211',
+      previousValue: '210',
+      createdBy: adminId,
+      now: missing.now(),
+    });
+    const refused = await missing.service.admin(admin({ op: 'publish-saved-rate', previous: '210' }));
+    expect(refused.status).toBe(409);
+    expect(asJson(await refused.json())).toEqual({ error: 'missing_channel' });
+    await missing.service.worker(worker());
+    expect(missing.calls).toEqual([]);
+
+    const { service, calls } = harness();
+    const preview = asJson(await (await service.admin(admin({ op: 'preview-rate' }))).json());
+    expect(preview.preview.status).toBe('preview');
+    expect(calls).toEqual([]);
+    const confirmed = asJson(await (await service.admin(admin({ op: 'confirm-rate', previewId: preview.preview.id }))).json());
+    expect(confirmed.broadcast).toMatchObject({ status: 'sent', delivered: true });
+    expect(calls).toHaveLength(1);
+    await service.admin(admin({ op: 'confirm-rate', previewId: preview.preview.id }));
+    expect(calls).toHaveLength(1);
   });
 });
 
