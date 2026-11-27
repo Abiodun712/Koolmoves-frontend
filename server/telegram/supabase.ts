@@ -36,6 +36,8 @@ const STATUSES = new Set<DeliveryStatus>([
   'cancelled',
 ]);
 
+const ALERT_KINDS = new Set<AlertKind>(['exchange_request', 'logistics_request', 'support_request']);
+
 export function createSupabaseTelegramStore(admin: SupabaseClient): TelegramStore {
   return {
     async recordUpdate(updateId, kind, chatId) {
@@ -654,10 +656,10 @@ function mapMessage(row: Row): SupportMessage {
 }
 
 function mapAlert(row: Row): AlertRow {
-  const kind = text(row.kind);
+  const kind = alertKindOf(row.kind);
   const status = statusOf(row.status);
   const createdAt = millis(row.created_at);
-  if ((kind !== 'exchange_request' && kind !== 'logistics_request') || !status || createdAt == null) throw storage();
+  if (!kind || !status || createdAt == null) throw storage();
   return {
     id: requiredText(row.id) ?? missing(),
     dedupeKey: requiredText(row.dedupe_key) ?? missing(),
@@ -700,6 +702,10 @@ function mapBroadcast(row: Row): BroadcastRow {
 
 function statusOf(value: unknown): DeliveryStatus | null {
   return typeof value === 'string' && STATUSES.has(value as DeliveryStatus) ? (value as DeliveryStatus) : null;
+}
+
+function alertKindOf(value: unknown): AlertKind | null {
+  return typeof value === 'string' && ALERT_KINDS.has(value as AlertKind) ? (value as AlertKind) : null;
 }
 
 function rows(data: unknown): Row[] {
