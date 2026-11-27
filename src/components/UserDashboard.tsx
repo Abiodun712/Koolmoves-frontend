@@ -1,5 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
+import { NairaAccountRequest } from './NairaAccountRequest';
+import {
+  ATTACH_EXCHANGE_NAIRA_ACCOUNT_RPC,
+  EXCHANGE_NAIRA_TRANSACTION_STORAGE_KEY,
+  parseStoredExchangeTransaction,
+  readSingleNairaAccount,
+  requestExchangeNairaAccount,
+  serializeStoredExchangeTransaction,
+  type NairaAccountPhase,
+  type NairaAccountView,
+} from '../lib/exchangeNairaAccount';
 export default function UserDashboard() {
   const  [currentView, setCurrentView] = useState<string>( 'form');
   const [bankName, setBankName] = useState("") ;
@@ -11,8 +22,19 @@ const [userProfile, setUserProfile] = useState<any>(null);
   const [timeLeft, setTimeLeft] = useState<number>(600);
   const [isLocked, setIsLocked] = useState<boolean>(true);
   
-  const [adminBanks, setAdminBanks] = useState<any[]>([]);
-  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+const [nairaPhase, setNairaPhase] = useState<NairaAccountPhase>(() => {
+  try {
+    const stored = parseStoredExchangeTransaction(
+      sessionStorage.getItem(EXCHANGE_NAIRA_TRANSACTION_STORAGE_KEY),
+    );
+    return stored?.revealed ? 'loading' : 'idle';
+  } catch {
+    return 'idle';
+  }
+});
+  const [nairaAccount, setNairaAccount] = useState<NairaAccountView | null>(null);
+  const [assignedAccounts, setAssignedAccounts] = useState<Record<string, NairaAccountView>>({});
+  const transactionKeyRef = useRef('');
 
   // Admin General System Status State
   const [systemStatus, setSystemStatus] = useState<{ is_online: boolean; notice: string; exchange_rate: number | null}>({
@@ -50,8 +72,7 @@ const [userProfile, setUserProfile] = useState<any>(null);
   }, [timeLeft, isLocked]);
 
   useEffect(() => {
-    fetchAdminBanks();
-    fetchUserHistory();
+        fetchUserHistory();
     fetchSystemStatus();
     fetchUserProfile();
 
@@ -73,23 +94,57 @@ const [userProfile, setUserProfile] = useState<any>(null);
     }
   };
 
-  const fetchAdminBanks = async () => {
-    const { data, error } = await supabase
-      .from('admin_banks')
-      .select('*')
-      .eq('status', 'active');
+  useEffect(() => {
+    const stored = parseStoredExchangeTransaction(
+      sessionStorage.getItem(EXCHANGE_NAIRA_TRANSACTION_STORAGE_KEY),
+    );
+    const transactionKey = stored?.transactionKey ?? crypto.randomUUID();
+    transactionKeyRef.current = transactionKey;
+    const revealed = stored?.transactionKey === transactionKey && stored.revealed === true;
+    if (!revealed) {
+      sessionStorage.setItem(
+        EXCHANGE_NAIRA_TRANSACTION_STORAGE_KEY,
+        serializeStoredExchangeTransaction({ transactionKey, revealed: false }),
+      );
+      return;
+    }
 
-    if (!error && data && data.length > 0) {
-      setAdminBanks(data.slice(0, 2));
-    } else {
-      setAdminBanks([
-        { bank_name: 'Guaranty Trust Bank (GTB)', account_number: '0123456789', account_name: 'KoolMoves Global Services' },
-        { bank_name: 'Moniepoint MFB', account_number: '9876543210', account_name: 'KoolMoves Fintech' }
-      ]);
-    }
-  };
+    let cancelled = false;
+    void requestExchangeNairaAccount((name, args) => supabase.rpc(name, args), transactionKey).then((outcome) => {
+      if (cancelled) return;
+      if (outcome.status === 'ready') {
+        setNairaAccount(outcome.account);
+        setNairaPhase('ready');
+        return;
+      }
+      setNairaAccount(null);
+      setNairaPhase(outcome.status === 'empty' ? 'empty' : 'unavailable');
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-  const fetchSystemStatus = async () => {
+  const requestNairaAccount = () => {
+    const transactionKey = transactionKeyRef.current;
+    if (!transactionKey) return;
+    setNairaPhase('loading');
+    void requestExchangeNairaAccount((name, args) => supabase.rpc(name, args), transactionKey).then((outcome) => {
+      if (outcome.status === 'ready') {
+        setNairaAccount(outcome.account);
+        setNairaPhase('ready');
+        sessionStorage.setItem(
+          EXCHANGE_NAIRA_TRANSACTION_STORAGE_KEY,
+          serializeStoredExchangeTransaction({ transactionKey, revealed: true }),
+        );
+        return;
+      }
+      setNairaAccount(null);
+      setNairaPhase(outcome.status === 'empty' ? 'empty' : 'unavailable');
+    });
+  };
+
+const fetchSystemStatus = async () => {
     setLoadingStatus(true);
     try {
       const { data, error } = await supabase
@@ -119,26 +174,45 @@ const [userProfile, setUserProfile] = useState<any>(null);
     }
   };
 
-  const fetchUserHistory = async () => {
-    setLoadingHistory(true);
-    const { data, error } = await supabase
-      .from('exchange_requests')
-      .select('*')
-      .order('created_at', { ascending: false });
+  const fetchUserHistory = async () => {
+    setLoadingHistory(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      setMyRequests([]);
+      setLoadingHistory(false);
+      return;
+    }
 
-    if (!error && data) {
-      setMyRequests(data);
-    }
-    setLoadingHistory(false);
-  };
+    const { data, error } = await supabase
+      .from('exchange_requests')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
 
-  const handleCopy = (text: string, index: number) => {
-    navigator.clipboard.writeText(text);
-    setCopiedIndex(index);
-    setTimeout(() => setCopiedIndex(null), 2500);
-  };
+    if (!error && data) {
+      setMyRequests(data);
+    }
 
-  const formatTime = (seconds: number) => {
+    const { data: assignmentRows, error: assignmentError } = await supabase
+      .from('exchange_naira_assignments')
+      .select('exchange_reference, bank_name, account_name, account_number')
+      .eq('user_id', user.id);
+
+    if (!assignmentError && Array.isArray(assignmentRows)) {
+      setAssignedAccounts((current) => {
+        const next = { ...current };
+        assignmentRows.forEach((row: { exchange_reference?: string }) => {
+          const account = readSingleNairaAccount(row);
+          const reference = row.exchange_reference;
+          if (account && reference) next[reference] = account;
+        });
+        return next;
+      });
+    }
+    setLoadingHistory(false);
+  };
+
+const formatTime = (seconds: number) => {
     const minutes = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
@@ -268,7 +342,24 @@ const [userProfile, setUserProfile] = useState<any>(null);
         });
         alert('Submission Error: ' + errString);
       } else {
-        const successText = `Exchange request submitted successfully! Tracking Ref: ${referenceNumber}`;
+        const revealedAccount = nairaAccount;
+        const transactionKey = transactionKeyRef.current;
+        if (revealedAccount && transactionKey) {
+          setAssignedAccounts((current) => ({ ...current, [referenceNumber]: revealedAccount }));
+          void supabase.rpc(ATTACH_EXCHANGE_NAIRA_ACCOUNT_RPC, {
+            p_transaction_key: transactionKey,
+            p_reference: referenceNumber,
+          });
+        }
+        const nextKey = crypto.randomUUID();
+        transactionKeyRef.current = nextKey;
+        sessionStorage.setItem(
+          EXCHANGE_NAIRA_TRANSACTION_STORAGE_KEY,
+          serializeStoredExchangeTransaction({ transactionKey: nextKey, revealed: false }),
+        );
+        setNairaAccount(null);
+        setNairaPhase('idle');
+        const successText = `Exchange request submitted successfully! Tracking Ref: ${referenceNumber}`;
         setNotification({
           type: 'success',
           message: successText
@@ -445,50 +536,25 @@ const [userProfile, setUserProfile] = useState<any>(null);
               </div>
             </div>
 
-            {/* SECTION 2: ADMIN BANK ACCOUNTS */}
-            <div className="p-4 bg-[#F8FAFC] rounded-2xl border border-[#E5E7EB] space-y-3">
-              <h4 className="text-xs font-bold text-[#0F172A] flex items-center gap-1.5">
-                <span> </span> Pay Naira Into Any Admin Account Below
-              </h4>
-    <p className="text-[11px] text-gray-600">
-  {exchangeRate ? (
-    <>
-      Transfer{" "}
-      <strong className="text-[#10B981]">
-        ₦{nairaTotal.toLocaleString()}
-      </strong>{" "}
-      to one of the two accounts below:
-    </>
-  ) : (
-    <strong className="text-red-500">
-      Exchange rate temporarily unavailable. Please try again.
-    </strong>
-  )}
-</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                {adminBanks.slice(0, 2).map((bank, index) => (
-                  <div key={index} className="p-3 bg-white rounded-xl border border-[#E5E7EB] space-y-2 shadow-sm relative">
-                    <div className="flex justify-between items-center">
-                      <span className="text-[10px] bg-[#0F172A] text-white px-2 py-0.5 rounded font-bold">Account Option {index + 1}</span>
-                      <button
-                        type="button"
-                        onClick={() => handleCopy(bank.account_number, index)}
-                        className="text-[10px] bg-gray-100 hover:bg-[#10B981] hover:text-white text-gray-700 font-bold px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 shadow-xs"
-                      >
-                        <span>{copiedIndex === index ? ' Copied!' : ' Copy Number'}</span>
-                      </button>
-                    </div>
-                    <div>
-                      <p className="text-xs font-extrabold text-[#111827] pt-1">{bank.bank_name}</p>
-                      <p className="text-xs font-mono font-bold text-[#10B981] tracking-wider pt-0.5">{bank.account_number}</p>
-                      <p className="text-[11px] text-gray-500 truncate pt-0.5">{bank.account_name}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+          {/* SECTION 2: NAIRA ACCOUNT */}
+          <div className="space-y-3">
+            <p className="text-[11px] text-gray-600">
+              {exchangeRate ? (
+                <>
+                  Transfer{' '}
+                  <strong className="text-[#10B981]">₦{nairaTotal.toLocaleString()}</strong>{' '}
+                  using the Naira account for this exchange. Upload the payment receipt before you submit.
+                </>
+              ) : (
+                <strong className="text-red-500">
+                  Exchange rate temporarily unavailable. Please try again.
+                </strong>
+              )}
+            </p>
+            <NairaAccountRequest phase={nairaPhase} account={nairaAccount} onRequest={requestNairaAccount} />
+          </div>
 
-            {/* SECTION 3: PAYMENT PROOF */}
+{/* SECTION 3: PAYMENT PROOF */}
             <div className="p-4 bg-[#F8FAFC] rounded-2xl border border-[#E5E7EB] space-y-3">
               <h4 className="text-xs font-bold text-[#0F172A] flex items-center gap-1.5">
                 <span> </span> Upload Proof of Payment
@@ -648,6 +714,11 @@ const [userProfile, setUserProfile] = useState<any>(null);
                       RMB: <strong className="text-gray-900">¥{req.rmb_amount}</strong> | Naira: <strong className="text-[#10B981]">₦{req.naira_amount?.toLocaleString()}</strong>
                     </p>
                     <p className="text-[10px] text-gray-400">Submitted: {new Date(req.created_at || Date.now()).toLocaleString()}</p>
+                    {assignedAccounts[req.reference_number] && (
+                      <p className="text-[11px] text-gray-600" data-testid="history-naira-account">
+                        Naira account: {assignedAccounts[req.reference_number].bankName} · {assignedAccounts[req.reference_number].accountName} · {assignedAccounts[req.reference_number].accountNumber}
+                      </p>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2">
