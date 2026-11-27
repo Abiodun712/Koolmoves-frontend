@@ -14,6 +14,7 @@ export type TelegramOp =
   | { op: 'retry-alerts' }
   | { op: 'preview-rate' }
   | { op: 'confirm-rate'; previewId: string }
+  | { op: 'publish-saved-rate'; previous: string }
   | { op: 'list-broadcasts' }
   | { op: 'resolve-broadcast'; id: string; resolution: 'not_posted' | 'posted_manually' };
 

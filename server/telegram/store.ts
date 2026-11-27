@@ -58,6 +58,7 @@ export type BroadcastRow = {
   body: string;
   rateLine: string;
   rateSnapshot: string;
+  sourceChangeId: string | null;
   createdBy: string;
   confirmedBy: string | null;
   confirmedAt: number | null;
@@ -69,6 +70,22 @@ export type BroadcastRow = {
   lastError: string | null;
   createdAt: number;
 };
+
+/** One committed change of site_settings.exchange_rate. Not a delivery status. */
+export type RateChangeRow = {
+  id: string;
+  rateValue: string;
+  previousValue: string | null;
+  createdBy: string | null;
+  status: 'queued' | 'sending' | 'done' | 'skipped';
+  broadcastId: string | null;
+  claimedAt: number | null;
+  createdAt: number;
+};
+
+export type RateChangeClaim =
+  | { installed: false }
+  | { installed: true; change: RateChangeRow | null };
 
 export type DeliveryPatch = {
   status: DeliveryStatus;
@@ -142,6 +159,38 @@ export interface TelegramStore {
   getBroadcast(id: string): Promise<BroadcastRow | null>;
   listBroadcasts(): Promise<BroadcastRow[]>;
   hasInFlightBroadcast(): Promise<boolean>;
+  /** Newest broadcast that was queued or sent. Previews and cancellations are ignored. */
+  latestAttemptedBroadcast(): Promise<BroadcastRow | null>;
+  /**
+   * Records one committed rate change. Production inserts come from the database
+   * trigger; tests and the service use this only to represent that row.
+   */
+  recordRateChange(input: {
+    rateValue: string;
+    previousValue: string | null;
+    createdBy: string | null;
+    now: number;
+  }): Promise<RateChangeRow>;
+  claimRateChange(now: number): Promise<RateChangeClaim>;
+  /** True when a committed change is already being turned into a channel post. */
+  hasSendingRateChange(): Promise<boolean>;
+  finishRateChange(
+    id: string,
+    patch: { status: 'done' | 'skipped'; broadcastId: string | null },
+  ): Promise<void>;
+  /**
+   * One broadcast per source change. A null source is an immediate save-path
+   * post made when the change table is not installed yet.
+   */
+  enqueueChangedBroadcast(input: {
+    sourceChangeId: string | null;
+    body: string;
+    rateLine: string;
+    rateSnapshot: string;
+    createdBy: string;
+    now: number;
+    expiresAt: number;
+  }): Promise<BroadcastRow>;
   claimPreview(id: string, adminUserId: string, now: number): Promise<BroadcastRow | null>;
   cancelPreview(id: string, error: string, now: number): Promise<void>;
   claimBroadcastSend(id: string, now: number): Promise<BroadcastRow | null>;

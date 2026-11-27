@@ -74,6 +74,8 @@ describe('AdminTelegram', () => {
         </MemoryRouter>,
       );
     });
+    expect(container.textContent).toContain('Saving a changed rate on the exchange admin page posts it here immediately.');
+    expect(container.textContent).not.toContain('Saving the website rate does not post it');
     expect(container.textContent).toContain('Automatic send queued. Not delivered.');
     expect(container.textContent).not.toContain('Delivered to Telegram');
     expect(loadTelegramAdminPage).toHaveBeenCalledTimes(1);

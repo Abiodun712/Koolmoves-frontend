@@ -16,6 +16,8 @@ import type {
   BroadcastRow,
   DeliveryPatch,
   DeliveryStatus,
+  RateChangeClaim,
+  RateChangeRow,
   RecentError,
   StatusCounts,
   SupportMessage,
@@ -336,6 +338,115 @@ export function createSupabaseTelegramStore(admin: SupabaseClient): TelegramStor
       assertOk(error);
       return (count ?? 0) > 0;
     },
+    async latestAttemptedBroadcast() {
+      const { data, error } = await admin
+        .from('telegram_rate_broadcasts')
+        .select('*')
+        .in('status', ['queued', 'sending', 'sent', 'needs_review', 'failed'])
+        .order('created_at', { ascending: false })
+        .limit(1);
+      assertOk(error);
+      const row = rows(data)[0];
+      return row ? mapBroadcast(row) : null;
+    },
+    async recordRateChange(input) {
+      const { data, error } = await admin
+        .from('telegram_rate_changes')
+        .insert({
+          rate_value: input.rateValue.trim(),
+          previous_value: input.previousValue == null ? null : input.previousValue.trim(),
+          status: 'queued',
+          created_by: input.createdBy,
+          created_at: iso(input.now),
+          updated_at: iso(input.now),
+        })
+        .select('*');
+      assertOk(error);
+      const row = rows(data)[0];
+      if (!row) throw storage();
+      return mapRateChange(row);
+    },
+    async hasSendingRateChange() {
+      const { count, error } = await admin
+        .from('telegram_rate_changes')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'sending');
+      if (error && missingRelation(error)) return false;
+      assertOk(error);
+      return (count ?? 0) > 0;
+    },
+    async claimRateChange(now): Promise<RateChangeClaim> {
+      const selected = await admin
+        .from('telegram_rate_changes')
+        .select('*')
+        .eq('status', 'queued')
+        .order('created_at', { ascending: true })
+        .limit(1);
+      if (selected.error && missingRelation(selected.error)) return { installed: false };
+      assertOk(selected.error);
+      const row = rows(selected.data)[0];
+      if (!row) return { installed: true, change: null };
+      const current = mapRateChange(row);
+      const { data, error } = await admin
+        .from('telegram_rate_changes')
+        .update({ status: 'sending', claimed_at: iso(now), updated_at: iso(now) })
+        .eq('id', current.id)
+        .eq('status', 'queued')
+        .select('*');
+      assertOk(error);
+      const claimed = rows(data)[0];
+      return { installed: true, change: claimed ? mapRateChange(claimed) : null };
+    },
+    async finishRateChange(id, patch) {
+      const { error } = await admin
+        .from('telegram_rate_changes')
+        .update({
+          status: patch.status,
+          broadcast_id: patch.broadcastId,
+          claimed_at: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id);
+      assertOk(error);
+    },
+    async enqueueChangedBroadcast(input) {
+      if (input.sourceChangeId) {
+        const existing = await admin
+          .from('telegram_rate_broadcasts')
+          .select('*')
+          .eq('source_change_id', input.sourceChangeId)
+          .maybeSingle();
+        assertOk(existing.error);
+        if (existing.data) return mapBroadcast(asRow(existing.data));
+      }
+      const payload: Row = {
+        status: 'queued',
+        body: input.body,
+        rate_line: input.rateLine,
+        rate_snapshot: input.rateSnapshot,
+        created_by: input.createdBy,
+        confirmed_by: input.createdBy,
+        confirmed_at: iso(input.now),
+        expires_at: iso(input.expiresAt),
+        created_at: iso(input.now),
+        updated_at: iso(input.now),
+      };
+      if (input.sourceChangeId) payload.source_change_id = input.sourceChangeId;
+      const { data, error } = await admin.from('telegram_rate_broadcasts').insert(payload).select('*');
+      if (input.sourceChangeId && duplicate(error)) {
+        const again = await admin
+          .from('telegram_rate_broadcasts')
+          .select('*')
+          .eq('source_change_id', input.sourceChangeId)
+          .maybeSingle();
+        assertOk(again.error);
+        if (again.data) return mapBroadcast(asRow(again.data));
+      }
+      assertOk(error);
+      const row = rows(data)[0];
+      if (!row) throw storage();
+      return mapBroadcast(row);
+    },
     async claimPreview(id, adminUserId, now) {
       const { data, error } = await admin
         .from('telegram_rate_broadcasts')
@@ -418,9 +529,15 @@ export function createSupabaseTelegramStore(admin: SupabaseClient): TelegramStor
         .eq('direction', 'outbound')
         .lt('claimed_at', cutoff);
       const broadcasts = await admin.from('telegram_rate_broadcasts').update(patch).eq('status', 'sending').lt('claimed_at', cutoff);
+      const rateChanges = await admin
+        .from('telegram_rate_changes')
+        .update({ status: 'queued', claimed_at: null, updated_at: stamp })
+        .eq('status', 'sending')
+        .lt('claimed_at', cutoff);
       assertOk(alerts.error);
       assertOk(replies.error);
       assertOk(broadcasts.error);
+      if (rateChanges.error && !missingRelation(rateChanges.error)) assertOk(rateChanges.error);
     },
     async counts() {
       return {
@@ -687,6 +804,7 @@ function mapBroadcast(row: Row): BroadcastRow {
     body: requiredText(row.body) ?? missing(),
     rateLine: requiredText(row.rate_line) ?? missing(),
     rateSnapshot: requiredText(row.rate_snapshot) ?? missing(),
+    sourceChangeId: text(row.source_change_id),
     createdBy: requiredText(row.created_by) ?? missing(),
     confirmedBy: text(row.confirmed_by),
     confirmedAt: millis(row.confirmed_at),
@@ -757,6 +875,33 @@ function stringList(value: unknown): string[] {
 
 function duplicate(error: { code?: string } | null): boolean {
   return error?.code === '23505';
+}
+
+function missingRelation(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  if (error.code === '42P01' || error.code === 'PGRST205') return true;
+  const message = error.message ?? '';
+  return /telegram_rate_changes/i.test(message) && /does not exist|schema cache/i.test(message);
+}
+
+function mapRateChange(row: Row): RateChangeRow {
+  const status = text(row.status);
+  const createdAt = millis(row.created_at);
+  if ((status !== 'queued' && status !== 'sending' && status !== 'done' && status !== 'skipped') || createdAt == null) {
+    throw storage();
+  }
+  const rateValue = requiredText(row.rate_value);
+  if (!rateValue) throw storage();
+  return {
+    id: requiredText(row.id) ?? missing(),
+    rateValue,
+    previousValue: text(row.previous_value),
+    createdBy: text(row.created_by),
+    status,
+    broadcastId: text(row.broadcast_id),
+    claimedAt: millis(row.claimed_at),
+    createdAt,
+  };
 }
 
 function assertOk(error: { message?: string } | null) {

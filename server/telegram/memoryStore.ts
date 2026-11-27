@@ -5,6 +5,8 @@ import type {
   BroadcastRow,
   DeliveryPatch,
   DeliveryStatus,
+  RateChangeClaim,
+  RateChangeRow,
   RecentError,
   StatusCounts,
   SupportMessage,
@@ -12,14 +14,21 @@ import type {
   Ticket,
 } from './store.js';
 
-export function createMemoryTelegramStore(options?: { immediateDispatch?: boolean }): TelegramStore {
+const ATTEMPTED_BROADCAST = new Set<DeliveryStatus>(['queued', 'sending', 'sent', 'needs_review', 'failed']);
+
+export function createMemoryTelegramStore(options?: {
+  immediateDispatch?: boolean;
+  rateChangesInstalled?: boolean;
+}): TelegramStore {
   const immediateDispatch = options?.immediateDispatch ?? false;
+  const rateChangesInstalled = options?.rateChangesInstalled ?? true;
   const updates = new Map<number, { kind: string; chatId: string | null; state: 'open' | 'done' }>();
   const buckets = new Map<string, number[]>();
   const tickets: Ticket[] = [];
   const messages: SupportMessage[] = [];
   const alerts: AlertRow[] = [];
   const broadcasts: BroadcastRow[] = [];
+  const rateChanges: RateChangeRow[] = [];
 
   function copyTicket(row: Ticket): Ticket {
     return { ...row };
@@ -31,6 +40,9 @@ export function createMemoryTelegramStore(options?: { immediateDispatch?: boolea
     return { ...row, deliveredChatIds: [...row.deliveredChatIds] };
   }
   function copyBroadcast(row: BroadcastRow): BroadcastRow {
+    return { ...row };
+  }
+  function copyRateChange(row: RateChangeRow): RateChangeRow {
     return { ...row };
   }
 
@@ -265,6 +277,7 @@ export function createMemoryTelegramStore(options?: { immediateDispatch?: boolea
         body: input.body,
         rateLine: input.rateLine,
         rateSnapshot: input.rateSnapshot,
+        sourceChangeId: null,
         createdBy: input.createdBy,
         confirmedBy: null,
         confirmedAt: null,
@@ -288,6 +301,74 @@ export function createMemoryTelegramStore(options?: { immediateDispatch?: boolea
     },
     async hasInFlightBroadcast() {
       return broadcasts.some((row) => row.status === 'queued' || row.status === 'sending' || row.status === 'needs_review');
+    },
+    async latestAttemptedBroadcast() {
+      for (let index = broadcasts.length - 1; index >= 0; index -= 1) {
+        const row = broadcasts[index];
+        if (ATTEMPTED_BROADCAST.has(row.status)) return copyBroadcast(row);
+      }
+      return null;
+    },
+    async recordRateChange(input) {
+      const row: RateChangeRow = {
+        id: randomUUID(),
+        rateValue: input.rateValue.trim(),
+        previousValue: input.previousValue == null ? null : input.previousValue.trim(),
+        createdBy: input.createdBy,
+        status: 'queued',
+        broadcastId: null,
+        claimedAt: null,
+        createdAt: input.now,
+      };
+      rateChanges.push(row);
+      return copyRateChange(row);
+    },
+    async hasSendingRateChange() {
+      return rateChangesInstalled && rateChanges.some((row) => row.status === 'sending');
+    },
+    async claimRateChange(now): Promise<RateChangeClaim> {
+      if (!rateChangesInstalled) return { installed: false };
+      const queued = rateChanges
+        .filter((row) => row.status === 'queued')
+        .sort((a, b) => a.createdAt - b.createdAt || rateChanges.indexOf(a) - rateChanges.indexOf(b));
+      const row = queued[0];
+      if (!row) return { installed: true, change: null };
+      row.status = 'sending';
+      row.claimedAt = now;
+      return { installed: true, change: copyRateChange(row) };
+    },
+    async finishRateChange(id, patch) {
+      const row = rateChanges.find((item) => item.id === id);
+      if (!row) return;
+      row.status = patch.status;
+      row.broadcastId = patch.broadcastId;
+      row.claimedAt = null;
+    },
+    async enqueueChangedBroadcast(input) {
+      if (input.sourceChangeId) {
+        const existing = broadcasts.find((row) => row.sourceChangeId === input.sourceChangeId);
+        if (existing) return copyBroadcast(existing);
+      }
+      const row: BroadcastRow = {
+        id: randomUUID(),
+        status: 'queued',
+        body: input.body,
+        rateLine: input.rateLine,
+        rateSnapshot: input.rateSnapshot,
+        sourceChangeId: input.sourceChangeId,
+        createdBy: input.createdBy,
+        confirmedBy: input.createdBy,
+        confirmedAt: input.now,
+        expiresAt: input.expiresAt,
+        attempts: 0,
+        nextAttemptAt: null,
+        claimedAt: null,
+        telegramMessageId: null,
+        lastError: null,
+        createdAt: input.now,
+      };
+      broadcasts.push(row);
+      return copyBroadcast(row);
     },
     async claimPreview(id, adminUserId, now) {
       const row = broadcasts.find((item) => item.id === id && item.status === 'preview');
@@ -334,6 +415,12 @@ export function createMemoryTelegramStore(options?: { immediateDispatch?: boolea
         if (row.status === 'sending' && row.claimedAt != null && row.claimedAt <= cutoff) {
           row.status = 'needs_review';
           row.lastError = 'lease_expired';
+          row.claimedAt = null;
+        }
+      }
+      for (const row of rateChanges) {
+        if (row.status === 'sending' && row.claimedAt != null && row.claimedAt <= cutoff) {
+          row.status = 'queued';
           row.claimedAt = null;
         }
       }

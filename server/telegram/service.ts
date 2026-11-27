@@ -27,16 +27,17 @@ import {
   PREVIEW_TTL_MS,
   MAX_ADMIN_BYTES,
   MAX_WEBHOOK_BYTES,
+  MAX_RATE_POSTS_PER_DISPATCH,
 } from './policy.js';
 import type { AlertRow, BroadcastRow, SupportMessage, TelegramStore } from './store.js';
 import { bearerToken, hostAllowed, maskChatId, publicError, requestHost, sanitizePlainText, secretEquals } from './text.js';
 import type { ParsedUpdate } from './updates.js';
 import { parseUpdate } from './updates.js';
-import { formatPlatformRateLine } from '../../src/lib/publishedExchangeRate.js';
+import { formatPlatformRateLine, isSamePublishedRate, publishedRateLine } from '../../src/lib/publishedExchangeRate.js';
 import type { BusinessRecord, PublishedRateRead } from './business.js';
 
 const DELIVERY_NOTE =
-  'A saved exchange, logistics, or support request starts an automatic Telegram send. Only status sent means delivered. queued, sending, failed, needs_review, cancelled, preview, and stored are not delivered. Retry undelivered is recovery, not the normal path.';
+  'A saved exchange, logistics, or support request starts an automatic Telegram send. A changed exchange rate is posted in that save, not on a timer. Only status sent means delivered. queued, sending, failed, needs_review, cancelled, preview, and stored are not delivered. Retry undelivered is recovery, not the normal path.';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -257,9 +258,17 @@ async function handleWorker(deps: TelegramDeps, request: Request): Promise<Respo
   if (!matched) return json(401, { error: 'unauthorized' });
   try {
     await deps.store.reap(deps.now());
+    const posted = deps.config.channelId
+      ? await publishSavedRateChanges(deps, deps.config, null)
+      : { installed: true, broadcasts: [] as BroadcastRow[] };
+    if (!deps.config.channelId) await skipQueuedRateChanges(deps);
     const alerts = await deliverAlerts(deps, deps.config, AUTOMATIC_ALERT_BATCH);
     const replies = await deliverReplies(deps, 10);
-    const broadcasts = deps.config.channelId ? await deliverBroadcasts(deps, deps.config, 1) : [];
+    const pending = deps.config.channelId
+      ? await deliverBroadcasts(deps, deps.config, MAX_RATE_POSTS_PER_DISPATCH)
+      : [];
+    const seen = new Set(posted.broadcasts.map((row) => row.id));
+    const broadcasts = [...posted.broadcasts, ...pending.filter((row) => !seen.has(row.id))];
     return json(200, {
       alerts: alerts.map(publicAlert),
       replies: replies.map(publicMessage),
@@ -283,6 +292,7 @@ type AdminOp =
   | { op: 'retry-alerts' }
   | { op: 'preview-rate' }
   | { op: 'confirm-rate'; previewId: string }
+  | { op: 'publish-saved-rate'; previous: string }
   | { op: 'list-broadcasts' }
   | { op: 'resolve-broadcast'; id: string; resolution: 'not_posted' | 'posted_manually' };
 
@@ -310,9 +320,11 @@ async function runAdmin(deps: TelegramDeps, config: TelegramConfig, adminUserId:
   if (op.op === 'reconcile') return json(200, await reconcile(deps));
   if (op.op === 'deliver') {
     await deps.store.reap(deps.now());
+    if (config.channelId) await publishSavedRateChanges(deps, config, adminUserId);
+    else await skipQueuedRateChanges(deps);
     const alerts = await deliverAlerts(deps, config, 10);
     const replies = await deliverReplies(deps, 10);
-    const broadcasts = config.channelId ? await deliverBroadcasts(deps, config, 1) : [];
+    const broadcasts = config.channelId ? await deliverBroadcasts(deps, config, MAX_RATE_POSTS_PER_DISPATCH) : [];
     return json(200, {
       alerts: alerts.map(publicAlert),
       replies: replies.map(publicMessage),
@@ -333,6 +345,7 @@ async function runAdmin(deps: TelegramDeps, config: TelegramConfig, adminUserId:
   }
   if (op.op === 'preview-rate') return previewRate(deps, config, adminUserId);
   if (op.op === 'confirm-rate') return confirmRate(deps, config, adminUserId, op.previewId);
+  if (op.op === 'publish-saved-rate') return publishSavedRate(deps, config, adminUserId, op.previous);
   if (op.op === 'list-broadcasts') {
     const broadcasts = await deps.store.listBroadcasts();
     return json(200, { broadcasts: broadcasts.map(publicBroadcast) });
@@ -422,6 +435,129 @@ async function confirmRate(deps: TelegramDeps, config: TelegramConfig, adminUser
   }
   const delivered = await deliverBroadcastId(deps, config, claimed.id);
   return json(200, { broadcast: publicBroadcast(delivered), note: DELIVERY_NOTE });
+}
+
+async function publishSavedRate(
+  deps: TelegramDeps,
+  config: TelegramConfig,
+  adminUserId: string,
+  previous: string,
+) {
+  if (!config.channelId) {
+    await skipQueuedRateChanges(deps);
+    return json(409, { error: 'missing_channel' });
+  }
+  const drained = await publishSavedRateChanges(deps, config, adminUserId);
+  let broadcasts = drained.broadcasts;
+  let inFlight = false;
+  if (broadcasts.length === 0 && !drained.installed) {
+    const immediate = await publishLiveRateIfChanged(deps, config, adminUserId, previous);
+    if (immediate) broadcasts = [immediate];
+  } else if (broadcasts.length === 0 && drained.installed) {
+    const current = await currentRateBroadcast(deps, config, previous);
+    if (current) broadcasts = [current];
+    else inFlight = await deps.store.hasSendingRateChange();
+  }
+  const pending = await deliverBroadcasts(deps, config, MAX_RATE_POSTS_PER_DISPATCH);
+  const seen = new Set(broadcasts.map((row) => row.id));
+  for (const row of pending) {
+    if (!seen.has(row.id)) broadcasts.push(row);
+  }
+  return json(200, { broadcasts: broadcasts.map(publicBroadcast), inFlight, note: DELIVERY_NOTE });
+}
+
+/** The broadcast already started for the live rate. Does not create a second post. */
+async function currentRateBroadcast(
+  deps: TelegramDeps,
+  config: TelegramConfig,
+  previous: string,
+): Promise<BroadcastRow | null> {
+  const rate = await deps.readPublishedRate().catch(() => null);
+  if (!rate || rate.parsed.status !== 'ready') return null;
+  const line = formatPlatformRateLine(rate.parsed.rate);
+  if (!line || isSamePublishedRate(previous, rate.raw)) return null;
+  const latest = await deps.store.latestAttemptedBroadcast();
+  if (!latest || latest.rateLine !== line) return null;
+  if (latest.status === 'queued') return deliverBroadcastId(deps, config, latest.id);
+  return latest;
+}
+
+/**
+ * Sends every committed rate change in this request. Nothing here waits for a
+ * clock, a daily cap, or the recovery cron. The first Telegram attempt is this call.
+ */
+async function publishSavedRateChanges(
+  deps: TelegramDeps,
+  config: TelegramConfig,
+  adminUserId: string | null,
+): Promise<{ installed: boolean; broadcasts: BroadcastRow[] }> {
+  const broadcasts: BroadcastRow[] = [];
+  let installed = true;
+  for (let index = 0; index < MAX_RATE_POSTS_PER_DISPATCH; index += 1) {
+    const claim = await deps.store.claimRateChange(deps.now());
+    if (!claim.installed) {
+      installed = false;
+      break;
+    }
+    if (!claim.change) break;
+    const change = claim.change;
+    const line = publishedRateLine(change.rateValue);
+    const createdBy = change.createdBy || adminUserId;
+    if (!line || !createdBy || isSamePublishedRate(change.previousValue, change.rateValue)) {
+      await deps.store.finishRateChange(change.id, { status: 'skipped', broadcastId: null });
+      continue;
+    }
+    const row = await deps.store.enqueueChangedBroadcast({
+      sourceChangeId: change.id,
+      body: broadcastBody(config.siteUrl, line),
+      rateLine: line,
+      rateSnapshot: change.rateValue.trim(),
+      createdBy,
+      now: deps.now(),
+      expiresAt: deps.now() + PREVIEW_TTL_MS,
+    });
+    await deps.store.finishRateChange(change.id, { status: 'done', broadcastId: row.id });
+    broadcasts.push(row.status === 'queued' ? await deliverBroadcastId(deps, config, row.id) : row);
+  }
+  return { installed, broadcasts };
+}
+
+async function skipQueuedRateChanges(deps: TelegramDeps): Promise<boolean> {
+  for (let index = 0; index < MAX_RATE_POSTS_PER_DISPATCH; index += 1) {
+    const claim = await deps.store.claimRateChange(deps.now());
+    if (!claim.installed) return false;
+    if (!claim.change) return true;
+    await deps.store.finishRateChange(claim.change.id, { status: 'skipped', broadcastId: null });
+  }
+  return true;
+}
+
+async function publishLiveRateIfChanged(
+  deps: TelegramDeps,
+  config: TelegramConfig,
+  adminUserId: string,
+  previous: string,
+): Promise<BroadcastRow | null> {
+  const rate = await deps.readPublishedRate().catch(() => null);
+  if (!rate || rate.parsed.status !== 'ready') return null;
+  const line = formatPlatformRateLine(rate.parsed.rate);
+  if (!line || isSamePublishedRate(previous, rate.raw)) return null;
+  const latest = await deps.store.latestAttemptedBroadcast();
+  if (latest && latest.rateLine === line) {
+    if (latest.status === 'queued') return deliverBroadcastId(deps, config, latest.id);
+    return latest;
+  }
+  const row = await deps.store.enqueueChangedBroadcast({
+    sourceChangeId: null,
+    body: broadcastBody(config.siteUrl, line),
+    rateLine: line,
+    rateSnapshot: rate.raw,
+    createdBy: adminUserId,
+    now: deps.now(),
+    expiresAt: deps.now() + PREVIEW_TTL_MS,
+  });
+  if (row.status !== 'queued') return row;
+  return deliverBroadcastId(deps, config, row.id);
 }
 
 async function reconcile(deps: TelegramDeps) {
@@ -712,6 +848,11 @@ function parseAdminOp(body: unknown): AdminOp | null {
   if (body.op === 'confirm-rate') {
     return typeof body.previewId === 'string' && UUID.test(body.previewId)
       ? { op: 'confirm-rate', previewId: body.previewId }
+      : null;
+  }
+  if (body.op === 'publish-saved-rate') {
+    return typeof body.previous === 'string' && body.previous.length <= 80
+      ? { op: 'publish-saved-rate', previous: body.previous }
       : null;
   }
   if (body.op === 'resolve-broadcast') {

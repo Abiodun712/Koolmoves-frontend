@@ -21,6 +21,7 @@ describe('loadTelegramAdminPage', () => {
     expect(ops).toEqual([...TELEGRAM_PAGE_LOAD_OPS]);
     expect(ops).not.toContain('preview-rate');
     expect(ops).not.toContain('confirm-rate');
+    expect(ops).not.toContain('publish-saved-rate');
     expect(ops).not.toContain('deliver');
     expect(supabase.auth.getSession).toHaveBeenCalled();
   });
