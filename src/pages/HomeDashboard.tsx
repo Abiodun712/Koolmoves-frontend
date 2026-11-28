@@ -1,98 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { supabase } from '../lib/supabaseClient';
 import InstallKoolMovezCard from '../components/InstallKoolMovezCard';
-import {
-  airShipmentStatusLabel,
-  normalizeLogisticsShipment,
-  seaShipmentStatusLabel,
-} from '../types/shipment';
-
-type RecentNotification = {
-  id: string;
-  source: 'Exchange' | 'Air Freight' | 'Sea Freight' | 'Platform';
-  type: 'success' | 'error' | 'info';
-  title: string;
-  message: string;
-  time: string;
-  at: number;
-};
-
-function formatRelativeTime(iso: string | null | undefined) {
-  if (!iso) return 'Recently';
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return 'Recently';
-
-  const diffMs = Date.now() - date.getTime();
-  const mins = Math.floor(diffMs / 60000);
-  if (mins < 1) return 'Just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
-
-function stamp(iso: string | null | undefined) {
-  if (!iso) return 0;
-  const t = new Date(iso).getTime();
-  return Number.isNaN(t) ? 0 : t;
-}
-
-function exchangeToNotification(req: any): RecentNotification {
-  const status = String(req.status || 'pending').toLowerCase();
-  const amount = req.rmb_amount != null ? `${req.rmb_amount} RMB` : 'your exchange';
-  const atIso = req.updated_at || req.created_at;
-
-  if (status === 'completed' || status === 'approved') {
-    return {
-      id: `ex-${req.id}`,
-      source: 'Exchange',
-      type: 'success',
-      title: 'Success Notification',
-      message: `Your exchange for ${amount} was completed.`,
-      time: formatRelativeTime(atIso),
-      at: stamp(atIso),
-    };
-  }
-
-  if (status === 'rejected') {
-    return {
-      id: `ex-${req.id}`,
-      source: 'Exchange',
-      type: 'error',
-      title: 'Action Required / Error Notice',
-      message: req.admin_note
-        ? `Exchange for ${amount} was rejected: ${req.admin_note}`
-        : `Your exchange for ${amount} was rejected.`,
-      time: formatRelativeTime(atIso),
-      at: stamp(atIso),
-    };
-  }
-
-  if (status === 'processing') {
-    return {
-      id: `ex-${req.id}`,
-      source: 'Exchange',
-      type: 'info',
-      title: 'Status Update',
-      message: `Your exchange for ${amount} is now processing.`,
-      time: formatRelativeTime(atIso),
-      at: stamp(atIso),
-    };
-  }
-
-  return {
-    id: `ex-${req.id}`,
-    source: 'Exchange',
-    type: 'info',
-    title: 'Status Update',
-    message: `Exchange request for ${amount} is pending review.`,
-    time: formatRelativeTime(req.created_at),
-    at: stamp(req.created_at),
-  };
-}
+import { loadCustomerNotifications, type RecentNotification } from '../lib/customerNotifications';
 
 export default function HomeDashboard() {
   const { user, profile } = useAuth();
@@ -102,143 +12,15 @@ export default function HomeDashboard() {
   useEffect(() => {
     let cancelled = false;
 
-    const fetchRecentNotifications = async () => {
-      setLoadingNotifications(true);
-      const collected: RecentNotification[] = [];
+    void loadCustomerNotifications({
+      userId: user?.id ?? null,
+      kmId: profile?.km_id ?? null,
+    }).then((items) => {
+      if (cancelled) return;
+      setNotifications(items);
+      setLoadingNotifications(false);
+    });
 
-      const { data: exchangeRows, error: exchangeError } = await supabase
-        .from('exchange_requests')
-        .select('id, rmb_amount, status, admin_note, created_at, updated_at')
-        .order('created_at', { ascending: false })
-        .limit(5);
-
-      if (!exchangeError && exchangeRows) {
-        collected.push(...exchangeRows.map(exchangeToNotification));
-      }
-
-      if (profile?.km_id) {
-        const { data: shipmentRows, error: shipmentError } = await supabase
-          .from('shipments')
-          .select('id, shipment_code, freight_type, status, created_at, updated_at')
-          .eq('km_id', profile.km_id)
-          .order('updated_at', { ascending: false })
-          .limit(8);
-
-        if (!shipmentError && shipmentRows) {
-          shipmentRows.forEach((row) => {
-            const shipment = normalizeLogisticsShipment(row);
-            const freight = shipment.freight_type === 'sea' ? 'Sea Freight' : 'Air Freight';
-            const label =
-              freight === 'Sea Freight'
-                ? seaShipmentStatusLabel(shipment.status)
-                : airShipmentStatusLabel(shipment.status);
-            const atIso = shipment.updated_at || shipment.created_at;
-            const isDone = shipment.status === 'completed';
-            const isProblem = shipment.status === 'cancelled';
-            collected.push({
-              id: `sh-${shipment.id}`,
-              source: freight,
-              type: isDone ? 'success' : isProblem ? 'error' : 'info',
-              title: `${freight} update`,
-              message: `${shipment.shipment_code}: ${label}.`,
-              time: formatRelativeTime(atIso),
-              at: stamp(atIso),
-            });
-          });
-        }
-      }
-
-      if (user?.id) {
-        const { data: packingRows, error: packingError } = await supabase
-          .from('packing_requests')
-          .select('id, freight_type, status, created_at, updated_at')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false })
-          .limit(5);
-
-        if (!packingError && packingRows) {
-          packingRows.forEach((row: any) => {
-            const freight = String(row.freight_type) === 'sea' ? 'Sea Freight' : 'Air Freight';
-            const status = String(row.status || 'pending_packing').replace(/_/g, ' ');
-            const atIso = row.updated_at || row.created_at;
-            collected.push({
-              id: `pk-${row.id}`,
-              source: freight,
-              type: 'info',
-              title: `${freight} packing`,
-              message: `Packing request is ${status}.`,
-              time: formatRelativeTime(atIso),
-              at: stamp(atIso),
-            });
-          });
-        }
-      }
-
-      const { data: settingsRows, error: settingsError } = await supabase
-        .from('site_settings')
-        .select('key, value')
-        .in('key', [
-          'air_freight_notice',
-          'sea_freight_notice',
-          'platform_status',
-          'offline_msg',
-        ]);
-
-      if (!settingsError && settingsRows) {
-        const map: Record<string, string> = {};
-        settingsRows.forEach((row: { key: string; value: string }) => {
-          map[row.key] = row.value ?? '';
-        });
-
-        const airNotice = map.air_freight_notice?.trim();
-        if (airNotice) {
-          collected.push({
-            id: 'sys-air-notice',
-            source: 'Air Freight',
-            type: 'info',
-            title: 'Air Freight update',
-            message: airNotice,
-            time: 'Published',
-            at: 1,
-          });
-        }
-
-        const seaNotice = map.sea_freight_notice?.trim();
-        if (seaNotice) {
-          collected.push({
-            id: 'sys-sea-notice',
-            source: 'Sea Freight',
-            type: 'info',
-            title: 'Sea Freight update',
-            message: seaNotice,
-            time: 'Published',
-            at: 1,
-          });
-        }
-
-        const platformStatus = (map.platform_status || 'active').toLowerCase();
-        const offlineMsg = map.offline_msg?.trim();
-        if (platformStatus && platformStatus !== 'active' && offlineMsg) {
-          collected.push({
-            id: 'sys-platform',
-            source: 'Platform',
-            type: 'error',
-            title: 'Platform update',
-            message: offlineMsg,
-            time: 'Published',
-            at: 1,
-          });
-        }
-      }
-
-      collected.sort((a, b) => b.at - a.at);
-      if (!cancelled) {
-        setNotifications(collected.slice(0, 8));
-        setLoadingNotifications(false);
-      }
-    };
-
-    void fetchRecentNotifications();
     return () => {
       cancelled = true;
     };
@@ -349,11 +131,11 @@ export default function HomeDashboard() {
         </div>
       </section>
 
-      <section className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm space-y-4">
+      <section className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm space-y-4" data-testid="recent-notifications">
         <div>
-          <h2 className="text-sm font-bold text-[#0F172A]">Recent Activity</h2>
+          <h2 className="text-sm font-bold text-[#0F172A]">Recent notifications</h2>
           <p className="text-xs text-gray-500 mt-0.5">
-            Updates from Exchange, Air Freight, Sea Freight, and the platform.
+            Exchange submissions, packing requests, shipments, logistics payments, and platform updates.
           </p>
         </div>
 
@@ -361,8 +143,8 @@ export default function HomeDashboard() {
           <p className="text-xs text-gray-400">Loading notifications...</p>
         ) : notifications.length === 0 ? (
           <div className="p-4 rounded-xl border border-gray-200 bg-gray-50 text-xs text-gray-600">
-            No recent notifications yet. Updates about your Exchange, Air Freight and Sea Freight
-            activities will appear here.
+            No recent notifications yet. Exchange submissions, packing requests, and other activity
+            on your account will appear here.
           </div>
         ) : (
           <div className="space-y-3">
